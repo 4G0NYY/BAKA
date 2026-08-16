@@ -127,7 +127,9 @@ impl Default for Search {
         Self {
             timeout_secs: 8,
             result_limit: 50,
-            min_seeders: 1,
+            // YTS reports 0 seeds for most of its catalogue, so a floor of 1 would
+            // quietly hide a whole source.
+            min_seeders: 0,
         }
     }
 }
@@ -286,7 +288,8 @@ impl Settings {
                 "Minimum seeders",
                 "Hide results with fewer seeders than this.",
                 Value::Count(&mut self.search.min_seeders),
-            ),
+            )
+            .zero_means("no minimum"),
             Field::new(
                 INTERFACE,
                 "Accent colour",

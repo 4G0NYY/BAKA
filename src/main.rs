@@ -8,6 +8,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::config::Settings;
+use crate::search::Category;
 
 const ART: &str = include_str!("../stuff/ascii-art.txt");
 const TAGLINE: &str = "BitTorrent Acquisition & Keyword Aggregator";
@@ -21,6 +22,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Search every source and print what came back.
+    Search {
+        /// What to look for.
+        query: String,
+        /// Only ask sources that serve this category.
+        #[arg(long, value_enum)]
+        category: Option<Category>,
+    },
     /// Show every setting and where it is stored.
     Settings {
         /// Print the settings file path and nothing else.
@@ -29,11 +38,39 @@ enum Command {
     },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     match Cli::parse().command {
         None => splash(),
+        Some(Command::Search { query, category }) => search(&query, category).await,
         Some(Command::Settings { path }) => show_settings(path),
     }
+}
+
+async fn search(query: &str, category: Option<Category>) -> Result<()> {
+    let settings = Settings::load()?;
+    let outcome = search::run(&settings.search, query, category).await?;
+
+    for failure in &outcome.failures {
+        eprintln!("{} skipped: {}", failure.source, failure.reason);
+    }
+
+    if outcome.torrents.is_empty() {
+        println!("Nothing found.");
+        return Ok(());
+    }
+
+    println!("{:<6} {:>6}  {:>9}  TITLE", "SOURCE", "SEED", "SIZE");
+    for torrent in &outcome.torrents {
+        println!(
+            "{:<6} {:>6}  {:>9}  {}",
+            torrent.source,
+            torrent.seeders,
+            search::human_size(torrent.size_bytes),
+            torrent.title
+        );
+    }
+    Ok(())
 }
 
 fn splash() -> Result<()> {

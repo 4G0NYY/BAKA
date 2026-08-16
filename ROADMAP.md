@@ -6,7 +6,7 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: phase 0 is done. `baka` and `baka settings` run. Phase 1 is next.
+Status: phases 0 and 1 are done. `baka search` returns real results. Phase 2 is next.
 
 ## Decisions already made
 
@@ -80,18 +80,30 @@ Target was `baka --version`. What shipped:
 - CI on GitHub Actions: `fmt`, `clippy --all-targets -D warnings`, `test` on Windows and
   Linux, an MSRV job, and `scripts/no-em-dashes.sh`.
 
-## Phase 1: search
+## Phase 1: search (done)
 
-Target: `baka search "query"` prints ranked results.
+Target was `baka search "query"`. What shipped:
 
-- `Indexer` trait: takes a query and a category, returns `Vec<Torrent>`.
-- `Torrent`: title, size, seeders, leechers, category, source, magnet or torrent URL.
-- First two indexers: YTS (clean JSON API, easy) and Nyaa (RSS, easy).
-- All indexers queried concurrently, each with its own timeout. One dead site never
-  stalls or fails the search.
-- Ranking: seeders first, with an obvious title match bonus. Deduplicate by infohash.
-- Plain stdout table so search is testable before any TUI exists.
-- Fixture-based tests: saved HTML and JSON responses parsed offline, no network in CI.
+- The `Indexer` trait is `url()` plus `parse()`, not one async call. Sources describe a
+  request and parse a body, and the requests, timeouts, concurrency and ranking live in
+  `search.rs` once. That is what makes every scraper test offline.
+- `Torrent`: title, size, seeders, leechers, category, source, infohash and magnet.
+- YTS and Nyaa, queried concurrently, each under its own timeout. A source that dies is
+  reported by name and the rest of the search still returns.
+- Ranking: a full title match first, seeders second. Deduplicated by infohash, keeping
+  the best seeded copy.
+- `baka search "query" --category anime` limits which sources are asked.
+- Fixtures are real saved responses in `src/search/fixtures/`. CI never hits the network.
+
+Two things found while building:
+
+- `yts.mx` does not resolve on every network, and the YTS API itself now points callers at
+  `movies-api.accel.li`. That is the base URL BAKA uses.
+- YTS reports 0 seeds for most of its catalogue, so `min_seeders` defaults to 0. A floor of
+  1 silently hides nearly all of one source.
+
+Phase 4 note: a source that needs a second request per result, 1337x being the obvious one,
+does not fit `url()` plus `parse()`. Extend the trait when that source lands, not before.
 
 ## Phase 2: engine
 

@@ -106,7 +106,7 @@ Command line flags override settings for a single run and never write to the fil
 | Command | Does |
 | --- | --- |
 | `baka get <magnet\|infohash\|file>` | Download one thing and exit |
-| `baka search "<query>"` | Print results as text |
+| `baka search "<query>" [--category <name>]` | Print results as text |
 | `baka settings` | Open the settings page on its own |
 | `baka watch <dir>` | Download anything dropped into a directory |
 | `baka serve` | Accept magnets over HTTP |

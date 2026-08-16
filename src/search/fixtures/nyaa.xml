@@ -1,0 +1,62 @@
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:nyaa="https://nyaa.si/xmlns/nyaa" version="2.0">
+	<channel>
+		<title>Nyaa - &#34;one piece&#34; - Torrent File RSS</title>
+		<description>RSS Feed for &#34;one piece&#34;</description>
+		<link>https://nyaa.si/</link>
+		<atom:link href="https://nyaa.si/?page=rss" rel="self" type="application/rss+xml" />
+		<item>
+			<title>[KiyoshiiSubs] One Piece - 1173v2 [1080p][H.265 - 10Bit].mkv</title>
+				<link>https://nyaa.si/download/2146857.torrent</link>
+				<guid isPermaLink="true">https://nyaa.si/view/2146857</guid>
+				<pubDate>Sat, 15 Aug 2026 23:25:28 -0000</pubDate>
+
+				<nyaa:seeders>140</nyaa:seeders>
+				<nyaa:leechers>4</nyaa:leechers>
+				<nyaa:downloads>333</nyaa:downloads>
+				<nyaa:infoHash>7f323023040a468749fb2336350588c17907522f</nyaa:infoHash>
+			<nyaa:categoryId>1_3</nyaa:categoryId>
+			<nyaa:category>Anime - Non-English-translated</nyaa:category>
+			<nyaa:size>812.8 MiB</nyaa:size>
+			<nyaa:comments>0</nyaa:comments>
+			<nyaa:trusted>No</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/2146857">#2146857 | [KiyoshiiSubs] One Piece - 1173v2 [1080p][H.265 - 10Bit].mkv</a> | 812.8 MiB | Anime - Non-English-translated | 7f323023040a468749fb2336350588c17907522f]]></description>
+		</item>
+		<item>
+			<title>One Piece S01E1173 1080p NF WEB-DL AAC2.0 H.264-VARYG (Multi-Subs)</title>
+				<link>https://nyaa.si/download/2146448.torrent</link>
+				<guid isPermaLink="true">https://nyaa.si/view/2146448</guid>
+				<pubDate>Sat, 15 Aug 2026 10:32:39 -0000</pubDate>
+
+				<nyaa:seeders>9</nyaa:seeders>
+				<nyaa:leechers>3</nyaa:leechers>
+				<nyaa:downloads>61</nyaa:downloads>
+				<nyaa:infoHash>180a8e1d305a70b432295d2a164fa835c7e8bfaa</nyaa:infoHash>
+			<nyaa:categoryId>1_2</nyaa:categoryId>
+			<nyaa:category>Anime - English-translated</nyaa:category>
+			<nyaa:size>861.1 MiB</nyaa:size>
+			<nyaa:comments>0</nyaa:comments>
+			<nyaa:trusted>No</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/2146448">#2146448 | One Piece S01E1173 1080p NF WEB-DL AAC2.0 H.264-VARYG (Multi-Subs)</a> | 861.1 MiB | Anime - English-translated | 180a8e1d305a70b432295d2a164fa835c7e8bfaa]]></description>
+		</item>
+		<item>
+			<title>[ToonsHub] One Piece EP1173 1080p NF WEB-DL AAC2.0 H.264 (Multi-Subs)</title>
+				<link>https://nyaa.si/download/2146441.torrent</link>
+				<guid isPermaLink="true">https://nyaa.si/view/2146441</guid>
+				<pubDate>Sat, 15 Aug 2026 10:07:10 -0000</pubDate>
+
+				<nyaa:seeders>131</nyaa:seeders>
+				<nyaa:leechers>3</nyaa:leechers>
+				<nyaa:downloads>460</nyaa:downloads>
+				<nyaa:infoHash>84d167f12b0ab37b8600b0a0d86deca71fe3fc71</nyaa:infoHash>
+			<nyaa:categoryId>1_2</nyaa:categoryId>
+			<nyaa:category>Anime - English-translated</nyaa:category>
+			<nyaa:size>861.0 MiB</nyaa:size>
+			<nyaa:comments>0</nyaa:comments>
+			<nyaa:trusted>No</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/2146441">#2146441 | [ToonsHub] One Piece EP1173 1080p NF WEB-DL AAC2.0 H.264 (Multi-Subs)</a> | 861.0 MiB | Anime - English-translated | 84d167f12b0ab37b8600b0a0d86deca71fe3fc71]]></description>
+		</item>
+	</channel>
+</rss>
