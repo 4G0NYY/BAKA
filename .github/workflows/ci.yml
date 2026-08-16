@@ -21,6 +21,12 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - name: No em dashes
         run: bash scripts/no-em-dashes.sh
+      - name: The release manifests still render
+        run: |
+          bash scripts/manifests.sh 9.9.9 abc123 def456 rendered
+          python3 -m json.tool rendered/baka.json > /dev/null
+          grep -q "PackageVersion: 9.9.9" rendered/winget/4G0NYY.BAKA.installer.yaml
+          grep -q '"version": "9.9.9"' rendered/baka.json
 
   test:
     strategy:

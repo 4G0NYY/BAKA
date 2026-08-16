@@ -12,8 +12,9 @@ Search torrents and download them without leaving your terminal. One Rust binary
 runtime, no setup.
 
 > **Status: pre-alpha.** The interface, the downloads, the settings page and every
-> source below all work. Nothing is installable yet, so the install commands describe
-> the target rather than today. The plan is in [ROADMAP.md](ROADMAP.md).
+> source below all work, and pushing a tag builds and publishes a release. The install
+> commands below work from the first tagged release onwards. The plan is in
+> [ROADMAP.md](ROADMAP.md).
 
 ## Why
 
@@ -31,6 +32,7 @@ winget install BAKA
 ```
 
 ```powershell
+scoop bucket add baka https://github.com/4G0NYY/BAKA
 scoop install baka
 ```
 
@@ -38,8 +40,19 @@ scoop install baka
 cargo install baka
 ```
 
-winget and Scoop cover Windows. `cargo install` works anywhere Rust does, including Linux
-and macOS.
+winget and Scoop cover Windows, on x64 and on arm64. `cargo install` works anywhere Rust
+does, including Linux and macOS.
+
+Every release also carries the archives on their own, with a `SHA256SUMS.txt` next to
+them, if you would rather unzip the binary and put it somewhere yourself:
+
+```powershell
+(Get-FileHash baka-0.1.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash
+```
+
+All four routes install a portable executable and nothing else. Uninstalling removes the
+binary and leaves `config.toml` and your downloads alone, so reinstalling finds the
+settings you already had.
 
 ## Use
 
@@ -71,6 +84,7 @@ the next launch. Finished downloads seed until you stop them.
 | `x` | Stop, files already on disk stay there |
 | `c` | Copy magnet link |
 | `s` | Settings |
+| `Esc` | Close what is open, twice to go back to the start |
 | `?` | Help |
 | `q` | Quit |
 
@@ -200,6 +214,7 @@ cargo run
 
 Before opening a pull request, read [CLAUDE.md](CLAUDE.md). It is written for Claude Code
 but the rules apply to everyone, and one of them is enforced by CI.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the checks to run and how a release is cut.
 
 ## Legal
 

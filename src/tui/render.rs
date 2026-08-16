@@ -414,7 +414,7 @@ fn question(frame: &mut Frame, app: &App) {
 }
 
 fn help(frame: &mut Frame, app: &App) {
-    const KEYS: [[&str; 2]; 13] = [
+    const KEYS: [[&str; 2]; 14] = [
         ["/", "Focus the search box"],
         ["Enter", "Search, browse an empty box, or download"],
         ["Tab", "Next tab, Shift Tab for the previous one"],
@@ -425,6 +425,7 @@ fn help(frame: &mut Frame, app: &App) {
         ["x", "Stop, files stay on disk"],
         ["c", "Copy the magnet link"],
         ["s", "Settings"],
+        ["Esc", "Close what is open, twice for the start"],
         ["arrows", "Change a setting, Enter types a value"],
         ["?", "This list"],
         ["q", "Quit"],

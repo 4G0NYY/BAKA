@@ -6,7 +6,7 @@ mod theme;
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use ratatui::DefaultTerminal;
@@ -16,6 +16,10 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use crate::config::Settings;
 use crate::engine::{DownloadId, Engine, Input, Progress, State};
 use crate::search::{self, Category, Outcome, Torrent, magnet_link};
+
+/// Long enough to be a deliberate double tap, short enough that an Esc from earlier in
+/// the session is not still counting.
+const DOUBLE_TAP: Duration = Duration::from_millis(600);
 
 /// The whole product.
 pub async fn run(settings: Settings) -> Result<()> {
@@ -104,6 +108,7 @@ enum Action {
     Yes,
     Help,
     Dismiss,
+    Home,
 }
 
 enum Event {
@@ -250,17 +255,23 @@ async fn event_loop(terminal: &mut DefaultTerminal, mut app: App) -> Result<()> 
         }
     });
 
+    let mut escaped: Option<Instant> = None;
     terminal.draw(|frame| render::draw(frame, &mut app))?;
     while let Some(event) = rx.recv().await {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                if let Some(action) = map_key(key, app.mode(), app.tab) {
+                let twice = escaped.is_some_and(|at| at.elapsed() < DOUBLE_TAP);
+                escaped = (key.code == KeyCode::Esc).then(Instant::now);
+                if let Some(action) = map_key(key, app.mode(), app.tab, twice) {
                     act(&mut app, action).await;
                 }
             }
             Event::Key(_) | Event::Redraw => {}
             Event::Tick => tick(&mut app).await,
-            Event::Searched(outcome) => finish_search(&mut app, *outcome),
+            // Results that land after the user has already left are answering a
+            // question nobody is asking any more.
+            Event::Searched(outcome) if app.searching => finish_search(&mut app, *outcome),
+            Event::Searched(_) => {}
             Event::Notice(message) => app.say(message),
         }
         if app.quit {
@@ -276,9 +287,12 @@ async fn event_loop(terminal: &mut DefaultTerminal, mut app: App) -> Result<()> 
     Ok(())
 }
 
-fn map_key(key: KeyEvent, mode: Mode, tab: Tab) -> Option<Action> {
+fn map_key(key: KeyEvent, mode: Mode, tab: Tab, escaped: bool) -> Option<Action> {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Some(Action::Quit);
+    }
+    if escaped && key.code == KeyCode::Esc {
+        return Some(Action::Home);
     }
 
     match mode {
@@ -364,6 +378,7 @@ async fn act(app: &mut App, action: Action) {
             app.typing = true;
         }
         Action::Dismiss => dismiss(app),
+        Action::Home => home(app),
         Action::Type(typed) => {
             if let Some(text) = typing_into(app) {
                 text.push(typed);
@@ -437,6 +452,26 @@ fn dismiss(app: &mut App) {
     } else if app.typing {
         app.typing = false;
     }
+}
+
+/// One Esc closes whatever is open. A second one closes the lot and puts the interface
+/// back where it started, which is the way out that does not depend on knowing how deep
+/// into it you are.
+fn home(app: &mut App) {
+    app.helping = false;
+    app.question = None;
+    app.prompt = None;
+    app.editor = None;
+    if app.settings_only {
+        return;
+    }
+    switch(app, Tab::Search);
+    app.query.clear();
+    app.results.clear();
+    app.failures.clear();
+    app.searching = false;
+    app.cursor[Tab::Search.index()] = 0;
+    app.typing = true;
 }
 
 fn submit(app: &mut App) {
@@ -766,30 +801,45 @@ mod tests {
 
     #[test]
     fn typing_in_the_search_box_never_triggers_a_shortcut() {
-        let typed = map_key(press(KeyCode::Char('d')), Mode::Typing, Tab::Search);
+        let typed = map_key(press(KeyCode::Char('d')), Mode::Typing, Tab::Search, false);
         assert_eq!(typed, Some(Action::Type('d')));
     }
 
     #[test]
     fn the_same_key_downloads_once_the_box_is_left() {
-        let pressed = map_key(press(KeyCode::Char('d')), Mode::Browsing, Tab::Search);
+        let pressed = map_key(
+            press(KeyCode::Char('d')),
+            Mode::Browsing,
+            Tab::Search,
+            false,
+        );
         assert_eq!(pressed, Some(Action::Download { pick_folder: false }));
     }
 
     #[test]
     fn a_capital_d_asks_where_to_put_it() {
-        let pressed = map_key(press(KeyCode::Char('D')), Mode::Browsing, Tab::Search);
+        let pressed = map_key(
+            press(KeyCode::Char('D')),
+            Mode::Browsing,
+            Tab::Search,
+            false,
+        );
         assert_eq!(pressed, Some(Action::Download { pick_folder: true }));
     }
 
     #[test]
     fn an_open_overlay_swallows_every_key_it_does_not_use() {
         assert_eq!(
-            map_key(press(KeyCode::Char('q')), Mode::Helping, Tab::Search),
+            map_key(press(KeyCode::Char('q')), Mode::Helping, Tab::Search, false),
             Some(Action::Dismiss)
         );
         assert_eq!(
-            map_key(press(KeyCode::Char('q')), Mode::Confirming, Tab::Search),
+            map_key(
+                press(KeyCode::Char('q')),
+                Mode::Confirming,
+                Tab::Search,
+                false
+            ),
             Some(Action::Dismiss)
         );
     }
@@ -797,9 +847,12 @@ mod tests {
     #[test]
     fn ctrl_c_quits_from_anywhere_including_a_text_box() {
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        assert_eq!(map_key(key, Mode::Typing, Tab::Search), Some(Action::Quit));
         assert_eq!(
-            map_key(key, Mode::Editing, Tab::Settings),
+            map_key(key, Mode::Typing, Tab::Search, false),
+            Some(Action::Quit)
+        );
+        assert_eq!(
+            map_key(key, Mode::Editing, Tab::Settings, false),
             Some(Action::Quit)
         );
     }
@@ -807,13 +860,80 @@ mod tests {
     #[test]
     fn the_settings_tab_uses_the_arrows_rather_than_the_download_keys() {
         assert_eq!(
-            map_key(press(KeyCode::Left), Mode::Browsing, Tab::Settings),
+            map_key(press(KeyCode::Left), Mode::Browsing, Tab::Settings, false),
             Some(Action::Nudge(false))
         );
         assert_eq!(
-            map_key(press(KeyCode::Char('d')), Mode::Browsing, Tab::Settings),
+            map_key(
+                press(KeyCode::Char('d')),
+                Mode::Browsing,
+                Tab::Settings,
+                false
+            ),
             None
         );
+    }
+
+    #[test]
+    fn one_esc_backs_out_a_layer_and_a_second_one_goes_home() {
+        assert_eq!(
+            map_key(press(KeyCode::Esc), Mode::Helping, Tab::Downloads, false),
+            Some(Action::Dismiss)
+        );
+        assert_eq!(
+            map_key(press(KeyCode::Esc), Mode::Helping, Tab::Downloads, true),
+            Some(Action::Home)
+        );
+    }
+
+    #[test]
+    fn any_other_key_between_the_two_is_not_a_double_tap() {
+        assert_eq!(
+            map_key(
+                press(KeyCode::Char('j')),
+                Mode::Browsing,
+                Tab::Downloads,
+                true
+            ),
+            Some(Action::Move(1))
+        );
+    }
+
+    #[test]
+    fn home_closes_everything_and_lands_on_the_empty_search_page() {
+        let mut app = App::new(Settings::default(), None);
+        app.tab = Tab::Downloads;
+        app.helping = true;
+        app.query = "dune".to_string();
+        app.results = vec![found("Dune Part Two")];
+        app.failures = vec!["yts skipped: timed out".to_string()];
+        app.searching = true;
+        app.typing = false;
+
+        home(&mut app);
+
+        assert_eq!(app.tab, Tab::Search);
+        assert!(!app.helping);
+        assert!(app.query.is_empty());
+        assert!(app.results.is_empty());
+        assert!(app.failures.is_empty());
+        assert!(!app.searching);
+        assert!(app.typing);
+        assert!(screen(&mut app).contains("BitTorrent Acquisition & Keyword Aggregator"));
+    }
+
+    #[test]
+    fn the_settings_page_on_its_own_has_nowhere_to_go_home_to() {
+        let mut app = App::new(Settings::default(), None);
+        app.tab = Tab::Settings;
+        app.settings_only = true;
+        app.typing = false;
+        app.editor = Some("7".to_string());
+
+        home(&mut app);
+
+        assert_eq!(app.tab, Tab::Settings);
+        assert!(app.editor.is_none());
     }
 
     #[test]
@@ -987,6 +1107,7 @@ mod tests {
         let drawn = screen(&mut app);
         assert!(drawn.contains("Keys"));
         assert!(drawn.contains("Copy the magnet link"));
+        assert!(drawn.contains("Close what is open, twice for the start"));
     }
 
     #[test]
