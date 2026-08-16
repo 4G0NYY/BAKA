@@ -60,7 +60,15 @@ Delete any comment that restates the line below it.
 Short enough to read in full, detailed enough to act on. No marketing voice, no filler
 intros, no "in today's fast paced world". If a section can be a table, make it a table.
 
-### 5. The UI carries the name
+### 5. Every setting lives on the Settings page
+
+One `Settings` struct in `config.rs`, one `config.toml`, one page in the TUI that edits it.
+No environment variables. No persistent flags. No second config file.
+
+A CLI flag may override a setting for one run, but it must never write to disk. If you add
+a field to `Settings`, it appears on the page in the same change, or the change is not done.
+
+### 6. The UI carries the name
 
 BAKA is the product name and the tone. The interface is playful in its branding and
 completely serious in its behaviour. No joke output during errors, transfers or anything

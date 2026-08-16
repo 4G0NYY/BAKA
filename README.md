@@ -20,6 +20,9 @@ runtime, no setup.
 BAKA is the same idea as a native binary: nothing to install first, nothing left behind,
 and fast enough that the terminal feels like the point rather than a limitation.
 
+It also keeps its settings in one place. Press `s`, change what you want, done. No
+environment variables to discover, no flags to memorise.
+
 ## Install
 
 ```powershell
@@ -57,23 +60,54 @@ the next launch. Finished downloads seed until you stop them.
 | --- | --- |
 | `/` | Focus search |
 | `Enter` | Run search, or browse when empty |
-| `Tab` | Switch between Search, Downloads and Seeding |
+| `Tab` | Switch between Search, Downloads, Seeding and Settings |
 | `j` `k` or arrows | Move |
 | `d` | Download to the default folder |
 | `D` | Download to a folder you pick |
-| `o` | Change the default download folder |
 | `p` | Pause or resume |
 | `x` | Stop |
 | `c` | Copy magnet link |
+| `s` | Settings |
 | `?` | Help |
 | `q` | Quit |
 
-### Without a terminal
+## Settings
+
+Everything configurable lives on one page. Press `s`, edit a row, and it saves itself.
+There are no environment variables and no persistent flags to hunt for.
+
+| Group | What you can change |
+| --- | --- |
+| Downloads | Download folder, maximum concurrent downloads, download rate limit, whether to ask for a folder every time |
+| Seeding | Seed after completion, maximum concurrent seeds, upload rate limit, stop at ratio |
+| Network | Listen port, DHT, UPnP port mapping, peer limit per torrent |
+| Search | Which sources are enabled, per source timeout, result limit, minimum seeders |
+| Interface | Accent colour, confirm before removing, game source warnings |
+
+Settings apply immediately. The few that cannot, such as the listen port, say so on their
+own row rather than pretending otherwise.
+
+Behind the page is a single file:
+
+| Platform | Path |
+| --- | --- |
+| Windows | `%APPDATA%\baka\config.toml` |
+| Linux | `~/.config/baka/config.toml` |
+| macOS | `~/Library/Application Support/baka/config.toml` |
+
+Edit it by hand if you prefer. `baka settings` opens the page without the rest of the TUI,
+and `baka settings --path` prints the location. Deleting the file resets everything to
+defaults, and a partial file is fine because missing values fall back.
+
+Command line flags override settings for a single run and never write to the file.
+
+## Without a terminal
 
 | Command | Does |
 | --- | --- |
 | `baka get <magnet\|infohash\|file>` | Download one thing and exit |
 | `baka search "<query>"` | Print results as text |
+| `baka settings` | Open the settings page on its own |
 | `baka watch <dir>` | Download anything dropped into a directory |
 | `baka serve` | Accept magnets over HTTP |
 | `baka files` | Serve finished downloads over HTTP |
@@ -97,7 +131,7 @@ Video and subtitle results cannot.
 
 ## How it works
 
-Search queries every relevant source at once, each on its own timeout, then merges and
+Search queries every enabled source at once, each on its own timeout, then merges and
 ranks by seeders and title match. A source that is down is skipped, not fatal.
 
 Downloading uses [librqbit](https://github.com/ikatson/rqbit) in-process. Files land on

@@ -14,9 +14,24 @@ Status: nothing is built yet. Phase 0 is the current work.
 | --- | --- | --- |
 | Torrent engine | Embed [`librqbit`](https://crates.io/crates/librqbit) | Only mature pure-Rust engine with DHT, uTP, resume and seeding. Writing our own delays parity by months. |
 | Interface | TUI first, CLI subcommands alongside | Matches torlink's shape and keeps headless and scripted use possible. |
+| Settings | One Settings page, one TOML file, no environment variables | Every knob is in one place you can find without reading docs. |
 | Sources | Same curated list as torlink | Parity out of the box, no setup for the user. |
 | Platforms for 1.0 | Windows via winget, Scoop and Chocolatey, plus `cargo install baka` everywhere | Windows is the primary target. `cargo install` covers Linux and macOS for free. |
 | Layout | One crate, several modules | Five crates for a tool this size is overhead, not structure. Split only when compile times justify it. |
+
+## Settings model
+
+torlink spreads its behaviour across env vars, one-off keybinds and flags. BAKA does not.
+
+- One file: `config.toml` in the platform config directory.
+- One editor: the Settings page inside the TUI, which reads and writes that file.
+- Every persistent setting appears on that page. If a knob exists, it is listed there.
+- CLI flags exist only for one-shot overrides of a single run. They never write config.
+- No environment variables. Not for paths, not for ports, not for anything.
+- A missing or partial config file is never an error. Defaults fill the gaps.
+
+The Settings page is not a phase 7 nicety. It ships with the TUI in phase 3, because a
+setting that has no home ends up as an env var, and that is the thing being avoided.
 
 ## Parity checklist
 
@@ -31,7 +46,8 @@ Everything torlink does, tracked to the phase that delivers it.
 | Empty search browses a curated library | 4 |
 | Background downloads while searching continues | 3 |
 | Progress, speed and ETA per download | 3 |
-| Downloads folder default, per-download override, changeable default | 3 |
+| Settings page covering every persistent option | 3 |
+| Per-download folder override | 3 |
 | Interrupted downloads resume on next start | 2 |
 | Auto seed on completion, pausable from a Seeding tab | 3 |
 | Keyboard help overlay | 3 |
@@ -51,8 +67,10 @@ Target: `baka --version` runs.
 
 - `cargo init`, edition 2024, MSRV pinned in `Cargo.toml`.
 - Modules stubbed: `config`, `search`, `engine`, `tui`, `server`.
-- `config.rs`: TOML at the platform config dir via `directories`, with defaults so a
-  missing file is never an error.
+- `config.rs` is the whole settings model: one `Settings` struct, a `Default` impl, and
+  load and save to TOML at the platform config dir via `directories`.
+- Every field carries its label and a one line description in that same place, so the
+  phase 3 Settings page renders from the struct instead of duplicating the list.
 - Error handling: `anyhow` at the binary boundary, `thiserror` for anything a caller
   might want to match on.
 - CI on GitHub Actions: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
@@ -79,20 +97,33 @@ Target: `baka get <magnet|infohash|path>` downloads, resumes and seeds.
   knows librqbit exists.
 - Accept magnet links, bare 40 character hex or 32 character base32 infohashes, and
   local `.torrent` paths.
+- The engine takes its limits from `Settings`. It never reads env vars.
 - Session state persisted so an interrupted download resumes on the next start.
 - Seed after completion by default.
 - Progress reported as a stream of snapshots the TUI can poll.
 
-## Phase 3: TUI
+## Phase 3: TUI and settings
 
 Target: `baka` with no arguments is the whole product.
 
-- `ratatui` plus `crossterm`. Tabs: Search, Downloads, Seeding.
+- `ratatui` plus `crossterm`. Tabs: Search, Downloads, Seeding, Settings.
 - Search runs without blocking the UI. Downloads keep running while the user searches.
 - Downloads tab shows progress, speed and ETA. Seeding tab pauses or stops.
+- Settings tab covers, at minimum:
+
+| Group | Settings |
+| --- | --- |
+| Downloads | Download folder, maximum concurrent downloads, download rate limit, ask for a folder per download |
+| Seeding | Seed after completion, maximum concurrent seeds, upload rate limit, stop at ratio |
+| Network | Listen port, DHT on or off, UPnP port mapping, peer limit per torrent |
+| Search | Enabled sources, per source timeout, result limit, hide results below a seeder count |
+| Interface | Accent colour, confirm before removing, show game source warnings |
+
+- Changes save when you leave the row and apply live wherever the engine allows it.
+  Anything that needs a restart says so on the row instead of failing quietly.
 - Keys: `/` search, `Enter` run, `Tab` switch tab, `j`/`k` or arrows move, `d` download,
-  `D` download to a chosen folder, `o` change the default folder, `p` pause or resume,
-  `x` stop, `c` copy magnet, `?` help, `q` quit.
+  `D` download to a chosen folder, `p` pause or resume, `x` stop, `c` copy magnet,
+  `s` settings, `?` help, `q` quit.
 - Branding lands here: BAKA wordmark on the empty state, a name expansion line, and a
   consistent accent colour. Loud enough to be recognisable, quiet enough to use daily.
 
@@ -107,6 +138,8 @@ Target: source parity with torlink.
 - Games results carry a visible warning: they are executables and can run code.
   Video and subtitle results cannot.
 - Empty search browses a curated library per category.
+- A new source appears in the Settings search group automatically. Adding a source must
+  never mean hand editing the settings list.
 - Each scraper is one file with its fixture next to it, so a broken site is a one file fix.
 
 ## Phase 5: headless
@@ -119,6 +152,9 @@ Target: BAKA is useful on a server with no terminal attached.
 - `baka files`: serves finished downloads over HTTP.
 - `--daemon`: detach and survive logout. On Windows this means a detached process plus a
   named pipe for control, not a service, unless a service turns out to be needed.
+- Headless modes read the same `config.toml`. `baka settings` opens the page on its own so
+  a server can be configured without the full TUI, and `baka settings --path` prints the
+  file location for anyone who would rather use an editor.
 
 ## Phase 6: packaging
 
@@ -129,6 +165,7 @@ Target: install in one command.
 - winget manifest submitted to `microsoft/winget-pkgs`, automated on tag.
 - Scoop manifest in a `scoop-baka` bucket repo. Chocolatey package after winget is live.
 - `cargo install baka` published to crates.io on the same tag.
+- Uninstall leaves `config.toml` alone. Reinstalling keeps your settings.
 - Release process documented in `CONTRIBUTING.md` and reduced to pushing a tag.
 
 ## Phase 7: 1.0
@@ -136,7 +173,7 @@ Target: install in one command.
 Target: it stays out of the way.
 
 - `baka attach`: connect a TUI to a running daemon and survive an SSH drop.
-- Config for custom download paths, rate limits, port and theme.
+- Config migration: a file written by an older version loads without losing settings.
 - Search result caching so a repeated query is instant.
 - Polish pass: startup time, memory under load, terminal resize, narrow terminals.
 
@@ -144,6 +181,8 @@ Target: it stays out of the way.
 
 - Hosting, indexing or mirroring any content. BAKA queries public sites and speaks
   BitTorrent. Nothing else.
+- Settings anywhere except the Settings page and the file behind it. No env vars, no
+  hidden keybinds that quietly persist state, no second config format.
 - A web UI. librqbit ships one, and if a browser is wanted, rqbit is already the answer.
 - A plugin system or a scripting language. Adding an indexer means adding a file.
-- Configuration for its own sake. Every option must earn its place.
+- Configuration for its own sake. Every option must earn its place on the page.
