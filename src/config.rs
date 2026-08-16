@@ -381,6 +381,13 @@ impl<'a> Field<'a> {
     }
 }
 
+/// Resume data, saved torrents and the DHT routing table. State rather than settings, so
+/// it keeps its own directory and can be deleted without losing anything a user chose.
+pub fn state_dir() -> Result<PathBuf, ConfigError> {
+    let base = BaseDirs::new().ok_or(ConfigError::NoConfigDir)?;
+    Ok(base.data_local_dir().join("baka"))
+}
+
 /// A relative path keeps a headless box working when it has no user directories.
 fn default_download_folder() -> PathBuf {
     UserDirs::new()

@@ -141,15 +141,17 @@ fn title_matches(query: &str, title: &str) -> bool {
         .all(|word| title.contains(&word.to_lowercase()))
 }
 
-fn magnet_link(info_hash: &str, title: &str) -> String {
-    let trackers: String = TRACKERS
-        .iter()
-        .map(|t| format!("&tr={}", encode(t)))
-        .collect();
-    format!(
-        "magnet:?xt=urn:btih:{info_hash}&dn={}{trackers}",
-        encode(title)
-    )
+/// An empty title drops the display name rather than sending an empty one, which is
+/// what happens when the engine is handed a bare infohash and nothing else.
+pub fn magnet_link(info_hash: &str, title: &str) -> String {
+    let mut link = format!("magnet:?xt=urn:btih:{info_hash}");
+    if !title.is_empty() {
+        link.push_str(&format!("&dn={}", encode(title)));
+    }
+    for tracker in TRACKERS {
+        link.push_str(&format!("&tr={}", encode(tracker)));
+    }
+    link
 }
 
 fn encode(input: &str) -> String {
@@ -243,6 +245,13 @@ mod tests {
         let magnet = magnet_link("abc123", "Some Title");
         assert!(magnet.starts_with("magnet:?xt=urn:btih:abc123"));
         assert!(magnet.contains("dn=Some%20Title"));
+        assert_eq!(magnet.matches("&tr=").count(), TRACKERS.len());
+    }
+
+    #[test]
+    fn a_magnet_with_no_title_has_no_empty_name_field() {
+        let magnet = magnet_link("abc123", "");
+        assert!(!magnet.contains("dn="));
         assert_eq!(magnet.matches("&tr=").count(), TRACKERS.len());
     }
 

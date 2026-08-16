@@ -6,7 +6,8 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: phases 0 and 1 are done. `baka search` returns real results. Phase 2 is next.
+Status: phases 0, 1 and 2 are done. `baka search` returns real results and `baka get`
+downloads, resumes and seeds them. Phase 3 is next.
 
 ## Decisions already made
 
@@ -65,8 +66,8 @@ Not planned for 1.0. Revisit only if real swarms turn out to need it.
 
 Target was `baka --version`. What shipped:
 
-- Edition 2024, MSRV 1.85 pinned and checked in CI. 1.85 is both the edition floor and the
-  highest MSRV any dependency asks for.
+- Edition 2024, MSRV pinned and checked in CI. It started at 1.85, the edition floor, and
+  moved to 1.88 in phase 2 for the reason recorded there.
 - Modules stubbed with the rule that governs each one: `search`, `engine`, `tui`, `server`.
 - `config.rs` holds the whole settings model: five grouped structs, `Default` impls, and
   load and save to TOML under the platform config dir via `directories`.
@@ -105,18 +106,35 @@ Two things found while building:
 Phase 4 note: a source that needs a second request per result, 1337x being the obvious one,
 does not fit `url()` plus `parse()`. Extend the trait when that source lands, not before.
 
-## Phase 2: engine
+## Phase 2: engine (done)
 
-Target: `baka get <magnet|infohash|path>` downloads, resumes and seeds.
+Target was `baka get <magnet|infohash|path>`. What shipped:
 
-- Wrap a librqbit `Session` behind a small `Engine` type. Nothing outside `engine.rs`
-  knows librqbit exists.
-- Accept magnet links, bare 40 character hex or 32 character base32 infohashes, and
-  local `.torrent` paths.
-- The engine takes its limits from `Settings`. It never reads env vars.
-- Session state persisted so an interrupted download resumes on the next start.
-- Seed after completion by default.
-- Progress reported as a stream of snapshots the TUI can poll.
+- `Engine` wraps a librqbit `Session`. Everything above it speaks `Input`, `Progress` and
+  `State`, so no librqbit type appears outside `engine.rs`.
+- `Input::parse` takes a magnet link, a 40 character hex infohash, a 32 character base32
+  infohash, or the path to a `.torrent` file. A bare infohash becomes a magnet carrying the
+  same public trackers a search result gets, so it can find peers without DHT.
+- Session state lives in the platform local data directory, not beside `config.toml`.
+  It is resume data, and deleting it costs progress but never settings.
+- Adding a torrent sets `overwrite`, without which librqbit refuses to touch files it did
+  not create, and a resumed or finished torrent can then neither continue nor seed.
+- `Progress` is a poll, not a subscription. Nothing above the engine holds a channel open.
+- `baka get` prints one status line in place, resumes what the last run left behind, seeds
+  when the setting says to, and treats Ctrl+C as stop rather than kill at every stage.
+- Verified end to end against a real 755 MiB Debian torrent: download, completion, seeding,
+  restart, recheck, resume.
+
+Two things found while building:
+
+- MSRV moved from 1.85 to 1.88. librqbit 9 uses let chains, which stabilised in 1.88, so
+  1.85 cannot build the dependency tree at all.
+- Adding a magnet blocks until peers hand over the file list, and that step can outlast the
+  download itself. It gets its own line rather than an empty prompt.
+
+Not enforced yet: maximum concurrent downloads, maximum concurrent seeds and stop at ratio.
+All three need a queue watching every torrent, which is phase 3 work because that is where
+the list of torrents becomes something a user sees.
 
 ## Phase 3: TUI and settings
 
@@ -125,6 +143,8 @@ Target: `baka` with no arguments is the whole product.
 - `ratatui` plus `crossterm`. Tabs: Search, Downloads, Seeding, Settings.
 - Search runs without blocking the UI. Downloads keep running while the user searches.
 - Downloads tab shows progress, speed and ETA. Seeding tab pauses or stops.
+- A queue in the engine enforces maximum concurrent downloads, maximum concurrent seeds
+  and stop at ratio. Phase 2 wired every other setting straight into the session.
 - Settings tab covers, at minimum:
 
 | Group | Settings |

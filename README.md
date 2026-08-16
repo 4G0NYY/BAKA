@@ -11,8 +11,9 @@ BitTorrent Acquisition & Keyword Aggregator
 Search torrents and download them without leaving your terminal. One Rust binary, no
 runtime, no setup.
 
-> **Status: pre-alpha.** Nothing is installable yet. The plan is in [ROADMAP.md](ROADMAP.md).
-> Everything below describes the target, not the present.
+> **Status: pre-alpha.** Nothing is installable yet and the terminal interface is not built.
+> `baka search` and `baka get` work today. Everything else below describes the target.
+> The plan is in [ROADMAP.md](ROADMAP.md).
 
 ## Why
 
@@ -100,6 +101,17 @@ and `baka settings --path` prints the location. Deleting the file resets everyth
 defaults, and a partial file is fine because missing values fall back.
 
 Command line flags override settings for a single run and never write to the file.
+
+Unfinished downloads are remembered elsewhere, because they are progress rather than
+preference:
+
+| Platform | Path |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\baka` |
+| Linux | `~/.local/share/baka` |
+| macOS | `~/Library/Application Support/baka` |
+
+Deleting that folder costs you the progress on anything still downloading, and nothing else.
 
 ## Without a terminal
 
