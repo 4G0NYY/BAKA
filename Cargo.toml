@@ -12,9 +12,11 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0.104"
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 clap = { version = "4.6.6", features = ["derive"] }
 directories = "6.0.0"
 librqbit = { version = "9", default-features = false, features = ["rust-tls"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls"] }
 roxmltree = "0.21.1"
 serde = { version = "1.0.229", features = ["derive"] }

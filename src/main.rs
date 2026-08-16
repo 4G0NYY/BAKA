@@ -11,10 +11,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 
 use crate::config::Settings;
-use crate::engine::{DownloadId, Engine, Input, Progress, State};
+use crate::engine::{DownloadId, Engine, Input, Progress, State, human_eta};
 use crate::search::{Category, human_size};
 
-const ART: &str = include_str!("../stuff/ascii-art.txt");
 const TAGLINE: &str = "BitTorrent Acquisition & Keyword Aggregator";
 
 #[derive(Parser)]
@@ -40,7 +39,7 @@ enum Command {
         /// or the path to a .torrent file.
         target: String,
     },
-    /// Show every setting and where it is stored.
+    /// Open the settings page without the rest of the interface.
     Settings {
         /// Print the settings file path and nothing else.
         #[arg(long)]
@@ -50,16 +49,19 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let settings = Settings::load()?;
     match Cli::parse().command {
-        None => splash(),
-        Some(Command::Search { query, category }) => search(&query, category).await,
-        Some(Command::Get { target }) => get(&target).await,
-        Some(Command::Settings { path }) => show_settings(path),
+        None => tui::run(settings).await,
+        Some(Command::Search { query, category }) => search(&settings, &query, category).await,
+        Some(Command::Get { target }) => get(&settings, &target).await,
+        Some(Command::Settings { path }) => match path {
+            true => print_path(),
+            false => tui::settings_page(settings).await,
+        },
     }
 }
 
-async fn search(query: &str, category: Option<Category>) -> Result<()> {
-    let settings = Settings::load()?;
+async fn search(settings: &Settings, query: &str, category: Option<Category>) -> Result<()> {
     let outcome = search::run(&settings.search, query, category).await?;
 
     for failure in &outcome.failures {
@@ -84,11 +86,9 @@ async fn search(query: &str, category: Option<Category>) -> Result<()> {
     Ok(())
 }
 
-async fn get(target: &str) -> Result<()> {
-    let settings = Settings::load()?;
+async fn get(settings: &Settings, target: &str) -> Result<()> {
     let input = Input::parse(target)?;
-
-    let engine = Engine::start(&settings).await?;
+    let engine = Engine::start(settings).await?;
 
     // Whatever was running last time comes back with the session, and it uses the
     // same bandwidth, so saying nothing about it would be a surprise.
@@ -105,8 +105,8 @@ async fn get(target: &str) -> Result<()> {
     }
 
     let download = async {
-        let id = engine.add(&input).await?;
-        let progress = follow(&engine, id).await?;
+        let id = engine.add(&input, &settings.downloads.folder).await?;
+        let progress = follow(&engine, settings, id).await?;
         Ok::<_, anyhow::Error>((id, progress))
     };
 
@@ -121,7 +121,10 @@ async fn get(target: &str) -> Result<()> {
             println!("Done. Files are in {}", progress.folder.display());
             if settings.seeding.after_completion {
                 println!("Seeding. Press Ctrl+C to stop.");
-                let _ = tokio::signal::ctrl_c().await;
+                tokio::select! {
+                    result = seed(&engine, settings, id) => result?,
+                    _ = tokio::signal::ctrl_c() => println!(),
+                }
             } else {
                 engine.pause(id).await?;
             }
@@ -134,9 +137,11 @@ async fn get(target: &str) -> Result<()> {
 
 /// Polling rather than waiting on completion keeps the status line moving and lets a
 /// torrent that fails say so instead of hanging.
-async fn follow(engine: &Engine, id: DownloadId) -> Result<Progress> {
+async fn follow(engine: &Engine, settings: &Settings, id: DownloadId) -> Result<Progress> {
     let mut named = false;
     loop {
+        // The same queue the interface runs, so the concurrency limits mean one thing.
+        engine.enforce(settings).await?;
         let progress = engine
             .progress(id)
             .context("the download vanished from the session")?;
@@ -162,20 +167,41 @@ async fn follow(engine: &Engine, id: DownloadId) -> Result<Progress> {
     }
 }
 
+/// Seeding ends when the queue says it does, which is what stop at ratio and the seed
+/// limit are for. Until then this is the same status line with different numbers.
+async fn seed(engine: &Engine, settings: &Settings, id: DownloadId) -> Result<()> {
+    loop {
+        engine.enforce(settings).await?;
+        let Some(progress) = engine.progress(id) else {
+            return Ok(());
+        };
+        if progress.state == State::Paused {
+            println!("\nStopped seeding.");
+            return Ok(());
+        }
+
+        print!("\r{:<70}", status(&progress));
+        io::stdout().flush()?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
 fn status(progress: &Progress) -> String {
     match progress.state {
         State::Checking => "checking files".to_string(),
+        State::Queued => "queued behind the other downloads".to_string(),
         State::Paused => "paused".to_string(),
         State::Failed => "failed".to_string(),
         State::Active if progress.total_bytes == 0 => "waiting for the file list".to_string(),
         State::Active if progress.finished => format!(
-            "seeding   {}/s up   {} shared   {} peers",
+            "seeding   {}/s up   {} shared   ratio {:.2}   {} peers",
             human_size(progress.upload_bps),
             human_size(progress.uploaded_bytes),
+            progress.ratio,
             progress.peers
         ),
         State::Active => format!(
-            "{:>5.1}%   {} of {}   {}/s   {}   {} peers",
+            "{:>5.1}%   {} of {}   {}/s   eta {}   {} peers",
             progress.done_bytes as f64 / progress.total_bytes as f64 * 100.0,
             human_size(progress.done_bytes),
             human_size(progress.total_bytes),
@@ -186,65 +212,7 @@ fn status(progress: &Progress) -> String {
     }
 }
 
-fn human_eta(eta: Option<Duration>) -> String {
-    let Some(eta) = eta else {
-        return "eta unknown".to_string();
-    };
-    let seconds = eta.as_secs();
-    match (seconds / 3600, seconds / 60 % 60, seconds % 60) {
-        (0, 0, s) => format!("eta {s}s"),
-        (0, m, s) => format!("eta {m}m {s}s"),
-        (h, m, _) => format!("eta {h}h {m}m"),
-    }
-}
-
-fn splash() -> Result<()> {
-    // The art file is CRLF, and a stray carriage return smears braille on some terminals.
-    for line in ART.lines() {
-        println!("{line}");
-    }
-
-    println!();
-    println!("BAKA {}", env!("CARGO_PKG_VERSION"));
-    println!("{TAGLINE}");
-    println!();
-    println!("The full terminal interface arrives in phase 3. See ROADMAP.md.");
-    println!("Settings: {}", Settings::path()?.display());
-    println!("Run baka --help for what works today.");
-    Ok(())
-}
-
-fn show_settings(path_only: bool) -> Result<()> {
-    let path = Settings::path()?;
-    if path_only {
-        println!("{}", path.display());
-        return Ok(());
-    }
-
-    let mut settings = Settings::load()?;
-    if !path.exists() {
-        // Writing it on first look gives the user something to edit before the page exists.
-        settings.save()?;
-        println!("Created {}", path.display());
-    } else {
-        println!("{}", path.display());
-    }
-
-    let mut group = "";
-    for field in settings.fields() {
-        if field.group != group {
-            group = field.group;
-            println!("\n{group}");
-        }
-        let restart = if field.needs_restart {
-            "   (applies on restart)"
-        } else {
-            ""
-        };
-        println!("  {:<26}{}{restart}", field.label, field.display());
-        println!("  {:<26}{}", "", field.description);
-    }
-
-    println!("\nEditing arrives with the settings page in phase 3. Until then, edit the file.");
+fn print_path() -> Result<()> {
+    println!("{}", Settings::path()?.display());
     Ok(())
 }

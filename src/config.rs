@@ -1,6 +1,7 @@
 //! Every persistent setting BAKA has. One struct, one file, one page in the TUI.
 //! Nothing else in the codebase may read the environment for configuration.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -64,9 +65,46 @@ pub struct Network {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Search {
+    pub sources: Sources,
     pub timeout_secs: u32,
     pub result_limit: u32,
     pub min_seeders: u32,
+}
+
+/// Which sources a search asks. Built from the indexer registry rather than written
+/// out here, so adding a source is still one file and one line in that registry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Sources(BTreeMap<String, bool>);
+
+impl Default for Sources {
+    fn default() -> Self {
+        Self(
+            crate::search::source_names()
+                .map(|name| (name.to_string(), true))
+                .collect(),
+        )
+    }
+}
+
+impl Sources {
+    pub fn enabled(&self, name: &str) -> bool {
+        self.0.get(name).copied().unwrap_or(true)
+    }
+
+    pub fn toggles(&mut self) -> impl Iterator<Item = (&str, &mut bool)> {
+        self.0.iter_mut().map(|(name, on)| (name.as_str(), on))
+    }
+
+    /// A source that has been added since the file was written arrives switched on, and
+    /// one that has been removed stops taking up a row on the Settings page.
+    fn follow_the_registry(&mut self) {
+        self.0
+            .retain(|name, _| crate::search::source_names().any(|known| known == name));
+        for name in crate::search::source_names() {
+            self.0.entry(name.to_string()).or_insert(true);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,6 +163,7 @@ impl Default for Network {
 impl Default for Search {
     fn default() -> Self {
         Self {
+            sources: Sources::default(),
             timeout_secs: 8,
             result_limit: 50,
             // YTS reports 0 seeds for most of its catalogue, so a floor of 1 would
@@ -174,7 +213,10 @@ impl Settings {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(e) => return Err(ConfigError::Read(path.to_path_buf(), e)),
         };
-        toml::from_str(&text).map_err(|e| ConfigError::Parse(path.to_path_buf(), e))
+        let mut settings: Self =
+            toml::from_str(&text).map_err(|e| ConfigError::Parse(path.to_path_buf(), e))?;
+        settings.search.sources.follow_the_registry();
+        Ok(settings)
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
@@ -192,7 +234,7 @@ impl Settings {
     /// The Settings page renders and edits this list, so a field that is not here
     /// cannot be changed by a user.
     pub fn fields(&mut self) -> Vec<Field<'_>> {
-        vec![
+        let mut fields = vec![
             Field::new(
                 DOWNLOADS,
                 "Folder",
@@ -204,14 +246,16 @@ impl Settings {
                 "Concurrent downloads",
                 "How many torrents download at the same time.",
                 Value::Count(&mut self.downloads.max_concurrent),
-            ),
+            )
+            .at_least(1),
             Field::new(
                 DOWNLOADS,
                 "Rate limit (KiB/s)",
                 "Cap on total download speed.",
                 Value::Count(&mut self.downloads.rate_limit_kib),
             )
-            .zero_means("unlimited"),
+            .zero_means("unlimited")
+            .step(64),
             Field::new(
                 DOWNLOADS,
                 "Ask for a folder",
@@ -229,14 +273,16 @@ impl Settings {
                 "Concurrent seeds",
                 "How many finished torrents keep sharing at once.",
                 Value::Count(&mut self.seeding.max_concurrent),
-            ),
+            )
+            .at_least(1),
             Field::new(
                 SEEDING,
                 "Rate limit (KiB/s)",
                 "Cap on total upload speed.",
                 Value::Count(&mut self.seeding.rate_limit_kib),
             )
-            .zero_means("unlimited"),
+            .zero_means("unlimited")
+            .step(64),
             Field::new(
                 SEEDING,
                 "Stop at ratio",
@@ -270,19 +316,39 @@ impl Settings {
                 "Peers per torrent",
                 "Upper bound on connections for a single torrent.",
                 Value::Count(&mut self.network.max_peers_per_torrent),
-            ),
+            )
+            .at_least(1)
+            .step(10)
+            .needs_restart(),
+        ];
+
+        // One row per source, taken from the indexer registry, so a new source needs
+        // no edit here to become switchable.
+        for (name, enabled) in self.search.sources.toggles() {
+            fields.push(Field::new(
+                SEARCH,
+                name,
+                "Ask this source when searching.",
+                Value::Flag(enabled),
+            ));
+        }
+
+        fields.extend([
             Field::new(
                 SEARCH,
                 "Source timeout (seconds)",
                 "How long one source may take before it is skipped.",
                 Value::Count(&mut self.search.timeout_secs),
-            ),
+            )
+            .at_least(1),
             Field::new(
                 SEARCH,
                 "Result limit",
                 "Most results to keep after merging every source.",
                 Value::Count(&mut self.search.result_limit),
-            ),
+            )
+            .at_least(1)
+            .step(10),
             Field::new(
                 SEARCH,
                 "Minimum seeders",
@@ -308,7 +374,9 @@ impl Settings {
                 "Flag results that are executables and can run code.",
                 Value::Flag(&mut self.interface.game_warnings),
             ),
-        ]
+        ]);
+
+        fields
     }
 }
 
@@ -329,17 +397,19 @@ pub enum Value<'a> {
 
 pub struct Field<'a> {
     pub group: &'static str,
-    pub label: &'static str,
+    pub label: &'a str,
     pub description: &'static str,
     pub needs_restart: bool,
     pub zero_means: Option<&'static str>,
     pub value: Value<'a>,
+    step: u32,
+    at_least: u32,
 }
 
 impl<'a> Field<'a> {
     fn new(
         group: &'static str,
-        label: &'static str,
+        label: &'a str,
         description: &'static str,
         value: Value<'a>,
     ) -> Self {
@@ -350,6 +420,8 @@ impl<'a> Field<'a> {
             needs_restart: false,
             zero_means: None,
             value,
+            step: 1,
+            at_least: 0,
         }
     }
 
@@ -360,6 +432,16 @@ impl<'a> Field<'a> {
 
     fn zero_means(mut self, word: &'static str) -> Self {
         self.zero_means = Some(word);
+        self
+    }
+
+    fn step(mut self, step: u32) -> Self {
+        self.step = step;
+        self
+    }
+
+    fn at_least(mut self, floor: u32) -> Self {
+        self.at_least = floor;
         self
     }
 
@@ -378,6 +460,104 @@ impl<'a> Field<'a> {
             Value::Path(path) => path.display().to_string(),
             Value::Accent(accent) => accent.to_string(),
         }
+    }
+
+    /// One press of an arrow key. A switch flips whichever way it is nudged, because
+    /// there is no third position for the other direction to reach.
+    pub fn nudge(&mut self, up: bool) {
+        let step = self.step;
+        let floor = self.at_least;
+        match &mut self.value {
+            Value::Flag(on) => **on = !**on,
+            Value::Accent(accent) => **accent = accent.next(up),
+            Value::Port(port) => {
+                **port = match up {
+                    true => port.saturating_add(1),
+                    false => port.saturating_sub(1).max(1),
+                }
+            }
+            Value::Count(count) => {
+                **count = match up {
+                    true => count.saturating_add(step),
+                    false => count.saturating_sub(step).max(floor),
+                }
+            }
+            Value::Ratio(ratio) => {
+                let stepped = if up { **ratio + 0.1 } else { **ratio - 0.1 };
+                **ratio = (stepped.clamp(0.0, 100.0) * 100.0).round() / 100.0;
+            }
+            // A folder has no next one to step to. It is typed.
+            Value::Path(_) => {}
+        }
+    }
+
+    /// What a typed edit starts from. A switch and a colour have nothing to type, so
+    /// they answer `None` and the page never opens an editor on them.
+    pub fn typed(&self) -> Option<String> {
+        match &self.value {
+            Value::Flag(_) | Value::Accent(_) => None,
+            Value::Port(port) => Some(port.to_string()),
+            Value::Count(count) => Some(count.to_string()),
+            Value::Ratio(ratio) => Some(format!("{ratio:.2}")),
+            Value::Path(path) => Some(path.display().to_string()),
+        }
+    }
+
+    pub fn accept(&mut self, typed: &str) -> Result<(), &'static str> {
+        let typed = typed.trim();
+        let floor = self.at_least;
+        match &mut self.value {
+            Value::Flag(_) | Value::Accent(_) => Err("this one changes with the arrow keys"),
+            Value::Port(port) => match typed.parse::<u16>() {
+                Ok(0) | Err(_) => Err("a port is a number from 1 to 65535"),
+                Ok(parsed) => {
+                    **port = parsed;
+                    Ok(())
+                }
+            },
+            Value::Count(count) => match typed.parse::<u32>() {
+                Ok(parsed) if parsed >= floor => {
+                    **count = parsed;
+                    Ok(())
+                }
+                Ok(_) => Err("that is below the lowest this setting goes"),
+                Err(_) => Err("this one takes a whole number"),
+            },
+            Value::Ratio(ratio) => match typed.parse::<f32>() {
+                Ok(parsed) if (0.0..=100.0).contains(&parsed) => {
+                    **ratio = parsed;
+                    Ok(())
+                }
+                _ => Err("a ratio is a number from 0 to 100"),
+            },
+            Value::Path(path) => match typed.is_empty() {
+                true => Err("a folder cannot be empty"),
+                false => {
+                    **path = PathBuf::from(typed);
+                    Ok(())
+                }
+            },
+        }
+    }
+}
+
+impl Accent {
+    pub const ALL: [Self; 5] = [
+        Self::Pink,
+        Self::Cyan,
+        Self::Green,
+        Self::Amber,
+        Self::Plain,
+    ];
+
+    fn next(self, forward: bool) -> Self {
+        let at = Self::ALL.iter().position(|a| *a == self).unwrap_or(0);
+        let count = Self::ALL.len();
+        let moved = match forward {
+            true => at + 1,
+            false => at + count - 1,
+        };
+        Self::ALL[moved % count]
     }
 }
 
@@ -456,6 +636,110 @@ mod tests {
             .find(|f| f.group == DOWNLOADS && f.label == "Rate limit (KiB/s)")
             .unwrap();
         assert_eq!(limit.display(), "unlimited");
+    }
+
+    #[test]
+    fn every_source_gets_a_row_it_can_be_switched_off_from() {
+        let mut settings = Settings::default();
+        let labels: Vec<String> = settings
+            .fields()
+            .iter()
+            .filter(|field| field.group == SEARCH)
+            .map(|field| field.label.to_string())
+            .collect();
+        for source in crate::search::source_names() {
+            assert!(labels.iter().any(|label| label == source), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_source_the_file_has_never_heard_of_arrives_switched_on() {
+        let mut sources = Sources(BTreeMap::new());
+        sources.follow_the_registry();
+        for source in crate::search::source_names() {
+            assert!(sources.enabled(source), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_source_that_no_longer_exists_stops_taking_up_a_row() {
+        let mut sources = Sources(BTreeMap::from([("demonoid".to_string(), false)]));
+        sources.follow_the_registry();
+        assert_eq!(
+            sources.toggles().count(),
+            crate::search::source_names().count()
+        );
+    }
+
+    #[test]
+    fn a_switched_off_source_survives_a_reload() {
+        let mut settings = Settings::default();
+        let first = crate::search::source_names().next().unwrap();
+        *settings.search.sources.0.get_mut(first).unwrap() = false;
+        let text = toml::to_string_pretty(&settings).unwrap();
+        let mut reloaded: Settings = toml::from_str(&text).unwrap();
+        reloaded.search.sources.follow_the_registry();
+        assert!(!reloaded.search.sources.enabled(first));
+    }
+
+    #[test]
+    fn an_arrow_key_flips_a_switch_whichever_way_it_points() {
+        let mut settings = Settings::default();
+        let mut fields = settings.fields();
+        let dht = fields.iter_mut().find(|f| f.label == "DHT").unwrap();
+        assert_eq!(dht.display(), "on");
+        dht.nudge(false);
+        assert_eq!(dht.display(), "off");
+        dht.nudge(false);
+        assert_eq!(dht.display(), "on");
+    }
+
+    #[test]
+    fn the_accent_colour_cycles_and_comes_back_round() {
+        let mut settings = Settings::default();
+        for _ in 0..Accent::ALL.len() {
+            let mut fields = settings.fields();
+            let accent = fields.iter_mut().find(|f| f.label == "Accent colour");
+            accent.unwrap().nudge(true);
+        }
+        assert_eq!(settings.interface.accent, Accent::default());
+    }
+
+    #[test]
+    fn a_setting_with_a_floor_will_not_be_nudged_below_it() {
+        let mut settings = Settings::default();
+        let mut fields = settings.fields();
+        let concurrent = fields
+            .iter_mut()
+            .find(|f| f.group == DOWNLOADS && f.label == "Concurrent downloads")
+            .unwrap();
+        for _ in 0..10 {
+            concurrent.nudge(false);
+        }
+        assert_eq!(concurrent.display(), "1");
+    }
+
+    #[test]
+    fn a_typed_value_is_checked_before_it_is_kept() {
+        let mut settings = Settings::default();
+        let mut fields = settings.fields();
+        let port = fields
+            .iter_mut()
+            .find(|f| f.label == "Listen port")
+            .unwrap();
+        assert!(port.accept("70000").is_err());
+        assert!(port.accept("0").is_err());
+        assert!(port.accept("not a port").is_err());
+        assert!(port.accept(" 51413 ").is_ok());
+        assert_eq!(port.display(), "51413");
+    }
+
+    #[test]
+    fn a_switch_has_nothing_to_type_into() {
+        let mut settings = Settings::default();
+        let fields = settings.fields();
+        let dht = fields.iter().find(|f| f.label == "DHT").unwrap();
+        assert!(dht.typed().is_none());
     }
 
     #[test]

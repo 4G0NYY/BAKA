@@ -6,8 +6,8 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: phases 0, 1 and 2 are done. `baka search` returns real results and `baka get`
-downloads, resumes and seeds them. Phase 3 is next.
+Status: phases 0 to 3 are done. `baka` with no arguments is the whole product: search,
+downloads, seeding and settings in one terminal interface. Phase 4 is next.
 
 ## Decisions already made
 
@@ -31,7 +31,7 @@ torlink spreads its behaviour across env vars, one-off keybinds and flags. BAKA 
 - No environment variables. Not for paths, not for ports, not for anything.
 - A missing or partial config file is never an error. Defaults fill the gaps.
 
-The Settings page is not a phase 7 nicety. It ships with the TUI in phase 3, because a
+The Settings page is not a phase 7 nicety. It shipped with the TUI in phase 3, because a
 setting that has no home ends up as an env var, and that is the thing being avoided.
 
 ## Parity checklist
@@ -75,9 +75,9 @@ Target was `baka --version`. What shipped:
   mutable handle to the value. The phase 3 page renders and edits that list, so a field
   missing from it cannot be reached by a user.
 - Missing files, partial files and keys from a newer version all load without an error.
-- `baka` prints the art from `stuff/` plus version and settings path. `baka settings`
-  lists every setting and writes the file on first run. `baka settings --path` prints
-  the path alone.
+- `baka` prints the art from `stuff/` plus version and settings path, and `baka settings`
+  lists every setting as text. Phase 3 replaced both with the interface. `baka settings
+  --path` still prints the path alone.
 - CI on GitHub Actions: `fmt`, `clippy --all-targets -D warnings`, `test` on Windows and
   Linux, an MSRV job, and `scripts/no-em-dashes.sh`.
 
@@ -132,36 +132,53 @@ Two things found while building:
 - Adding a magnet blocks until peers hand over the file list, and that step can outlast the
   download itself. It gets its own line rather than an empty prompt.
 
-Not enforced yet: maximum concurrent downloads, maximum concurrent seeds and stop at ratio.
+Left for phase 3: maximum concurrent downloads, maximum concurrent seeds and stop at ratio.
 All three need a queue watching every torrent, which is phase 3 work because that is where
-the list of torrents becomes something a user sees.
+the list of torrents becomes something a user sees. That queue landed there, and `baka get`
+runs it too.
 
-## Phase 3: TUI and settings
+## Phase 3: TUI and settings (done)
 
-Target: `baka` with no arguments is the whole product.
+Target was `baka` with no arguments being the whole product. What shipped:
 
-- `ratatui` plus `crossterm`. Tabs: Search, Downloads, Seeding, Settings.
-- Search runs without blocking the UI. Downloads keep running while the user searches.
-- Downloads tab shows progress, speed and ETA. Seeding tab pauses or stops.
+- `ratatui` 0.30 with its crossterm backend. Four tabs: Search, Downloads, Seeding,
+  Settings. A key thread and a one second ticker feed one event loop, so a search, a
+  magnet waiting on peers and the interface never wait on each other.
+- Search results, downloads and seeds are three views of state the loop refreshes. A
+  search runs in a spawned task and arrives as an event, so typing never stalls.
+- A magnet link, a bare infohash or a file path typed into the search box is downloaded
+  rather than searched. That is what pasting one into a search box is asking for.
+- Downloads tab: progress bar, size, speed, time left, peers and state. Seeding tab:
+  ratio, shared bytes, upload speed, peers and state.
 - A queue in the engine enforces maximum concurrent downloads, maximum concurrent seeds
-  and stop at ratio. Phase 2 wired every other setting straight into the session.
-- Settings tab covers, at minimum:
+  and stop at ratio. It is a pure function over a list of torrents, so every rule in it
+  is tested without a session. `baka get` runs the same queue.
+- Settings page over `Settings::fields()`, so a field that is not on the page cannot
+  exist. Arrow keys change a value, `Enter` types one, and a value that does not parse
+  says why and keeps the editor open. Changes apply live where the session allows it and
+  save when the row is left. A setting that cannot apply live says so on its own row.
+- The Search group lists one row per source, built from the indexer registry rather than
+  written out by hand, which is what phase 4 needs it to do.
+- `baka settings` opens that page on its own and starts no session, so it can be used on
+  a machine already running BAKA. `baka settings --path` still prints the path alone.
+- Every key the README promises: `/`, `Enter`, `Tab`, `j` `k`, `d`, `D`, `p`, `x`, `c`,
+  `s`, `?`, `q`. `?` opens the list of them.
+- Branding lands on the empty Search tab: the art, the BAKA wordmark, the name expansion
+  and an accent colour that follows the setting. Nothing is playful anywhere else.
 
-| Group | Settings |
-| --- | --- |
-| Downloads | Download folder, maximum concurrent downloads, download rate limit, ask for a folder per download |
-| Seeding | Seed after completion, maximum concurrent seeds, upload rate limit, stop at ratio |
-| Network | Listen port, DHT on or off, UPnP port mapping, peer limit per torrent |
-| Search | Enabled sources, per source timeout, result limit, hide results below a seeder count |
-| Interface | Accent colour, confirm before removing, show game source warnings |
+Four things found while building:
 
-- Changes save when you leave the row and apply live wherever the engine allows it.
-  Anything that needs a restart says so on the row instead of failing quietly.
-- Keys: `/` search, `Enter` run, `Tab` switch tab, `j`/`k` or arrows move, `d` download,
-  `D` download to a chosen folder, `p` pause or resume, `x` stop, `c` copy magnet,
-  `s` settings, `?` help, `q` quit.
-- Branding lands here: BAKA wordmark on the empty state, a name expansion line, and a
-  consistent accent colour. Loud enough to be recognisable, quiet enough to use daily.
+- librqbit treats pausing an already paused torrent as an error, so the queue compares
+  against the current state instead of issuing orders and hoping. The same check makes
+  `enforce` safe to call every second.
+- A queue has to tell a torrent the user paused apart from one the queue paused, or
+  quitting with something paused hands it back running on the next start. That is what
+  the wish per torrent is, and it is why `queued` is a state a user can see.
+- The session reads its default output folder once at startup, so the folder is named on
+  every add instead. That is what turns the download folder into a live setting.
+- The clipboard needs a dependency. `arboard` without its image feature is the whole of
+  it, and OSC 52 was passed over because it fails silently on the consoles that do not
+  support it, which looks like a broken key.
 
 ## Phase 4: full source list
 
@@ -174,8 +191,8 @@ Target: source parity with torlink.
 - Games results carry a visible warning: they are executables and can run code.
   Video and subtitle results cannot.
 - Empty search browses a curated library per category.
-- A new source appears in the Settings search group automatically. Adding a source must
-  never mean hand editing the settings list.
+- A new source appears in the Settings search group automatically. Phase 3 built that
+  list from the indexer registry, so adding a source is still one file and one line.
 - Each scraper is one file with its fixture next to it, so a broken site is a one file fix.
 
 ## Phase 5: headless

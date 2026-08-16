@@ -62,8 +62,12 @@ pub trait Indexer: Send + Sync {
     fn parse(&self, body: &str) -> Result<Vec<Torrent>>;
 }
 
-fn all() -> Vec<Box<dyn Indexer>> {
-    vec![Box::new(yts::Yts), Box::new(nyaa::Nyaa)]
+const INDEXERS: &[&dyn Indexer] = &[&yts::Yts, &nyaa::Nyaa];
+
+/// The Settings page lists one row per source from this, so a source added to
+/// `INDEXERS` can be switched off without touching the settings model.
+pub fn source_names() -> impl Iterator<Item = &'static str> {
+    INDEXERS.iter().map(|indexer| indexer.name())
 }
 
 pub async fn run(
@@ -75,7 +79,10 @@ pub async fn run(
     let limit = Duration::from_secs(settings.timeout_secs.into());
 
     let mut tasks = JoinSet::new();
-    for indexer in all() {
+    for indexer in INDEXERS {
+        if !settings.sources.enabled(indexer.name()) {
+            continue;
+        }
         if !only.is_none_or(|wanted| indexer.categories().contains(&wanted)) {
             continue;
         }
@@ -83,7 +90,7 @@ pub async fn run(
         let query = query.to_string();
         tasks.spawn(async move {
             let name = indexer.name();
-            let work = fetch(&client, indexer.as_ref(), &query);
+            let work = fetch(&client, *indexer, &query);
             match tokio::time::timeout(limit, work).await {
                 Ok(result) => (name, result),
                 Err(_) => (name, Err(anyhow::anyhow!("timed out"))),
