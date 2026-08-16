@@ -1,0 +1,70 @@
+{
+ "query": "dune",
+ "results": [
+  {
+   "torrent_id": "1f382e51-6071-4568-83ed-4e29df033130",
+   "torrent_name": "Dune.2021.1080p.BluRay.REMUX.AVC.DTS-HD.MA.TrueHD.7.1.Atmos-FGT",
+   "torrent_clean_title": null,
+   "torrent_infohash": "d0edbfa5f48275bcc841e6979b7601e6f7eea6bc",
+   "torrent_total_size": 39962824835,
+   "torrent_file_count": 2,
+   "torrent_seeders": 171,
+   "torrent_leechers": 101,
+   "torrent_created_at": "2026-04-07T18:23:49.924904+00:00",
+   "torrent_poster_url": null,
+   "torrent_cover_url": null,
+   "match_type": "torrent_name",
+   "rank": 1,
+   "source": "user"
+  },
+  {
+   "torrent_id": "d163a5e812b14e98233a90562d3bc4874a4ab8a8",
+   "torrent_name": "Dune (2021) BDRip.mkv",
+   "torrent_clean_title": null,
+   "torrent_infohash": "d163a5e812b14e98233a90562d3bc4874a4ab8a8",
+   "torrent_total_size": 4872487202,
+   "torrent_file_count": 0,
+   "torrent_seeders": 41,
+   "torrent_leechers": 7,
+   "torrent_created_at": "2026-01-24T10:43:26.917613+00:00",
+   "torrent_poster_url": "https://image.tmdb.org/t/p/w500/d5NXSklXo0qyIYkgV94XAgMIckC.jpg",
+   "torrent_cover_url": "https://image.tmdb.org/t/p/w1280/wYMbnrdRCREjNLwFlG5SLWzBjui.jpg",
+   "match_type": "torrent_name",
+   "rank": 1,
+   "source": "dht",
+   "imdb_id": null,
+   "poster_url": null,
+   "imdb_rating": null,
+   "imdb_votes": null,
+   "runtime_minutes": null,
+   "genres": null,
+   "year": null
+  },
+  {
+   "torrent_id": "abba0dab-cd9d-4bab-839c-027701d4e6b6",
+   "torrent_name": "Dune Part Two 2024 V2 1080p X264 HDTS English + Hindi AAC 2.5GB Cukister-BonsaiHD.mkv",
+   "torrent_clean_title": null,
+   "torrent_infohash": "793c7c4adac06b15c39513f5b32a5ce06634b347",
+   "torrent_total_size": 2703759800,
+   "torrent_file_count": 1,
+   "torrent_seeders": 28,
+   "torrent_leechers": 40,
+   "torrent_created_at": "2026-06-18T17:16:21.643085+00:00",
+   "torrent_poster_url": null,
+   "torrent_cover_url": null,
+   "match_type": "torrent_name",
+   "rank": 1,
+   "source": "user"
+  }
+ ],
+ "pagination": {
+  "limit": 10,
+  "offset": 0,
+  "count": 10,
+  "hasMore": true
+ },
+ "filters": {
+  "mediaType": "video",
+  "source": "all"
+ }
+}

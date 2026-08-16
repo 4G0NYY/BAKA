@@ -11,10 +11,9 @@ BitTorrent Acquisition & Keyword Aggregator
 Search torrents and download them without leaving your terminal. One Rust binary, no
 runtime, no setup.
 
-> **Status: pre-alpha.** The interface, the downloads and the settings page all work.
-> Nothing is installable yet, and only YTS and Nyaa are wired up as sources, so the
-> install commands and the full source table below describe the target rather than today.
-> The plan is in [ROADMAP.md](ROADMAP.md).
+> **Status: pre-alpha.** The interface, the downloads, the settings page and every
+> source below all work. Nothing is installable yet, so the install commands describe
+> the target rather than today. The plan is in [ROADMAP.md](ROADMAP.md).
 
 ## Why
 
@@ -51,8 +50,9 @@ baka
 ```
 
 Type to search. Paste a magnet link, a bare infohash or the path to a `.torrent` file
-into the same box and BAKA downloads it instead of searching for it. Pressing Enter on an
-empty box will browse a curated library once phase 4 lands.
+into the same box and BAKA downloads it instead of searching for it. Press Enter on an
+empty box to browse what the sources are listing right now, a share from each category
+rather than whichever one has the biggest swarms.
 
 Downloads run in the background while you keep searching. Interrupted downloads resume on
 the next launch. Finished downloads seed until you stop them.
@@ -62,7 +62,7 @@ the next launch. Finished downloads seed until you stop them.
 | Key | Action |
 | --- | --- |
 | `/` | Focus search |
-| `Enter` | Run the search, or download the selected result |
+| `Enter` | Run the search, browse an empty box, or download the selected result |
 | `Tab` | Switch between Search, Downloads, Seeding and Settings |
 | `j` `k` or arrows | Move, and change the selected setting |
 | `d` | Download to the default folder |
@@ -122,7 +122,7 @@ Deleting that folder costs you the progress on anything still downloading, and n
 | Command | Does |
 | --- | --- |
 | `baka get <magnet\|infohash\|file>` | Download one thing and exit |
-| `baka search "<query>" [--category <name>]` | Print results as text |
+| `baka search ["<query>"] [--category <name>]` | Print results as text, or browse with no query |
 | `baka settings` | Open the settings page on its own |
 | `baka watch <dir>` | Download anything dropped into a directory |
 | `baka serve` | Accept magnets over HTTP |
@@ -144,6 +144,14 @@ A short, hand-picked list. No indexer proxy to configure.
 
 Game results are executables and can run code on your machine. BAKA marks them clearly.
 Video and subtitle results cannot.
+
+Two of them work differently to the rest, and the Search tab says which source each
+result came from so you can tell:
+
+- EZTV publishes new releases rather than a search, so a query keeps whatever in the
+  current feed matches it. Browsing is where it shows its whole hand.
+- 1337x is blocked or challenged on some networks. BAKA tries its mirrors in turn and
+  moves on quietly if none of them answer.
 
 ## How it works
 

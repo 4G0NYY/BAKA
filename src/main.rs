@@ -27,8 +27,8 @@ struct Cli {
 enum Command {
     /// Search every source and print what came back.
     Search {
-        /// What to look for.
-        query: String,
+        /// What to look for. Leave it out to browse what the sources are listing.
+        query: Option<String>,
         /// Only ask sources that serve this category.
         #[arg(long, value_enum)]
         category: Option<Category>,
@@ -52,7 +52,9 @@ async fn main() -> Result<()> {
     let settings = Settings::load()?;
     match Cli::parse().command {
         None => tui::run(settings).await,
-        Some(Command::Search { query, category }) => search(&settings, &query, category).await,
+        Some(Command::Search { query, category }) => {
+            search(&settings, query.as_deref().unwrap_or_default(), category).await
+        }
         Some(Command::Get { target }) => get(&settings, &target).await,
         Some(Command::Settings { path }) => match path {
             true => print_path(),
@@ -73,11 +75,15 @@ async fn search(settings: &Settings, query: &str, category: Option<Category>) ->
         return Ok(());
     }
 
-    println!("{:<6} {:>6}  {:>9}  TITLE", "SOURCE", "SEED", "SIZE");
+    println!(
+        "{:<12} {:<6} {:>6}  {:>9}  TITLE",
+        "SOURCE", "SHELF", "SEED", "SIZE"
+    );
     for torrent in &outcome.torrents {
         println!(
-            "{:<6} {:>6}  {:>9}  {}",
+            "{:<12} {:<6} {:>6}  {:>9}  {}",
             torrent.source,
+            torrent.category.to_string(),
             torrent.seeders,
             human_size(torrent.size_bytes),
             torrent.title

@@ -1,0 +1,55 @@
+{
+ "torrents_count": 1074166,
+ "limit": 3,
+ "page": 1,
+ "torrents": [
+  {
+   "id": 3140007,
+   "hash": "e21d289964f79d78c1af82c605c483b9fbde8a1e",
+   "filename": "The Only Way Is Essex S37E05 720p WEB H264-JFF[EZTVx.to].mkv",
+   "magnet_url": "magnet:?xt=urn:btih:e21d289964f79d78c1af82c605c483b9fbde8a1e&dn=The+Only+Way+Is+Essex+S37E05+720p+WEB+H264-JFF%5Beztvx.to%5D&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.stealth.si:80/announce&tr=udp://tracker.torrent.eu.org:451/announce&tr=udp://tracker.dler.org:6969/announce&tr=https://tracker.moeblog.cn:443/announce&tr=https://tracker.zhuqiy.com:443/announce&tr=udp://open.dstud.io:6969/announce",
+   "title": "The Only Way Is Essex S37E05 720p WEB H264-JFF EZTV",
+   "imdb_id": "1737565",
+   "season": "37",
+   "episode": "5",
+   "small_screenshot": "",
+   "large_screenshot": "",
+   "seeds": 0,
+   "peers": 0,
+   "date_released_unix": 1786878976,
+   "size_bytes": "1040629990"
+  },
+  {
+   "id": 3139950,
+   "hash": "b82b5d189d08233a30cb1fef73747610bb72ea26",
+   "filename": "Iron.Wok.Jan.S01E07.1080p.HEVC.x265-MeGusta[EZTVx.to].mkv",
+   "magnet_url": "magnet:?xt=urn:btih:b82b5d189d08233a30cb1fef73747610bb72ea26&dn=Iron.Wok.Jan.S01E07.1080p.HEVC.x265-MeGusta%5Beztvx.to%5D&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.stealth.si:80/announce&tr=udp://tracker.torrent.eu.org:451/announce&tr=udp://tracker.dler.org:6969/announce&tr=https://tracker.moeblog.cn:443/announce&tr=https://tracker.zhuqiy.com:443/announce&tr=udp://open.dstud.io:6969/announce",
+   "title": "Iron Wok Jan S01E07 1080p HEVC x265-MeGusta EZTV",
+   "imdb_id": "42963873",
+   "season": "1",
+   "episode": "7",
+   "small_screenshot": "",
+   "large_screenshot": "",
+   "seeds": 0,
+   "peers": 0,
+   "date_released_unix": 1786874188,
+   "size_bytes": "197001208"
+  },
+  {
+   "id": 3139949,
+   "hash": "2264eeb968fb5686aaab8977be348eb2c3c322ac",
+   "filename": "Iron.Wok.Jan.S01E07.XviD-AFG[EZTVx.to].avi",
+   "magnet_url": "magnet:?xt=urn:btih:2264eeb968fb5686aaab8977be348eb2c3c322ac&dn=Iron.Wok.Jan.S01E07.XviD-AFG%5Beztvx.to%5D&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.stealth.si:80/announce&tr=udp://tracker.torrent.eu.org:451/announce&tr=udp://tracker.dler.org:6969/announce&tr=https://tracker.moeblog.cn:443/announce&tr=https://tracker.zhuqiy.com:443/announce&tr=udp://open.dstud.io:6969/announce",
+   "title": "Iron Wok Jan S01E07 XviD-AFG EZTV",
+   "imdb_id": "42963873",
+   "season": "1",
+   "episode": "7",
+   "small_screenshot": "",
+   "large_screenshot": "",
+   "seeds": 0,
+   "peers": 0,
+   "date_released_unix": 1786874052,
+   "size_bytes": "301213104"
+  }
+ ]
+}

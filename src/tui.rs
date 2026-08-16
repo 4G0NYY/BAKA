@@ -454,13 +454,10 @@ fn submit(app: &mut App) {
 }
 
 /// A magnet, an infohash or a torrent file in the box is a download, not a query.
-/// That is what pasting one into a search box is asking for.
+/// That is what pasting one into a search box is asking for. An empty box is a
+/// browse, which is what an empty box is asking for.
 fn start_search(app: &mut App) {
     let typed = app.query.trim().to_string();
-    if typed.is_empty() {
-        app.say("Type something to search. Browsing a library arrives in phase 4.");
-        return;
-    }
     if let Ok(input) = Input::parse(&typed) {
         app.query.clear();
         let folder = app.settings.downloads.folder.clone();
@@ -468,14 +465,19 @@ fn start_search(app: &mut App) {
         return;
     }
 
+    app.searching = true;
+    app.typing = false;
+    ask(app, typed);
+}
+
+/// The sources are asked in a task, so typing never waits on the slowest of them.
+fn ask(app: &App, query: String) {
     let Some(events) = app.events.clone() else {
         return;
     };
     let settings = app.settings.search.clone();
-    app.searching = true;
-    app.typing = false;
     tokio::spawn(async move {
-        let outcome = search::run(&settings, &typed, None).await;
+        let outcome = search::run(&settings, &query, None).await;
         let _ = events.send(Event::Searched(Box::new(outcome)));
     });
 }
@@ -830,11 +832,11 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_box_says_so_rather_than_asking_every_source_for_nothing() {
+    fn an_empty_box_browses_rather_than_complaining() {
         let mut app = App::new(Settings::default(), None);
         start_search(&mut app);
-        assert!(!app.searching);
-        assert!(app.notice.is_some());
+        assert!(app.searching);
+        assert!(app.notice.is_none());
     }
 
     #[test]
@@ -869,7 +871,7 @@ mod tests {
     }
 
     #[test]
-    fn results_are_drawn_with_their_source_and_size() {
+    fn results_are_drawn_with_their_source_shelf_and_size() {
         let mut app = App::new(Settings::default(), None);
         app.results = vec![found("Dune Part Two")];
         app.typing = false;
@@ -877,6 +879,20 @@ mod tests {
         assert!(drawn.contains("Dune Part Two"));
         assert!(drawn.contains("3.1 GiB"));
         assert!(drawn.contains("yts"));
+        assert!(drawn.contains("movies"));
+    }
+
+    #[test]
+    fn a_browse_names_the_shelf_every_result_came_from() {
+        let mut app = App::new(Settings::default(), None);
+        let mut game = found("Some Repack");
+        game.category = Category::Games;
+        game.source = "fitgirl";
+        app.results = vec![found("Dune Part Two"), game];
+        app.typing = false;
+        let drawn = screen(&mut app);
+        assert!(drawn.contains("games"));
+        assert!(drawn.contains("movies"));
     }
 
     #[test]

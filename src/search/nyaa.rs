@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
 use roxmltree::Document;
 
-use super::{Category, Indexer, Torrent, encode, magnet_link};
+use super::{Ask, Category, Found, Indexer, Torrent, encode, magnet_link, parse_size};
 
 pub struct Nyaa;
 
 const BASE: &str = "https://nyaa.si/";
+
+// Nyaa's category for anime somebody has subtitled, which is what the Anime shelf is.
+const SUBTITLED: &str = "1_2";
 
 impl Indexer for Nyaa {
     fn name(&self) -> &'static str {
@@ -16,11 +19,15 @@ impl Indexer for Nyaa {
         &[Category::Anime]
     }
 
-    fn url(&self, query: &str) -> String {
-        format!("{BASE}?page=rss&q={}", encode(query))
+    fn urls(&self, ask: &Ask) -> Vec<String> {
+        let url = match ask {
+            Ask::Words(query) => format!("{BASE}?page=rss&q={}", encode(query)),
+            Ask::Browse(_) => format!("{BASE}?page=rss&c={SUBTITLED}"),
+        };
+        vec![url]
     }
 
-    fn parse(&self, body: &str) -> Result<Vec<Torrent>> {
+    fn parse(&self, body: &str, _ask: &Ask) -> Result<Vec<Found>> {
         let feed = Document::parse(body).context("nyaa sent something other than RSS")?;
 
         let mut found = Vec::new();
@@ -40,7 +47,7 @@ impl Indexer for Nyaa {
                 continue;
             }
 
-            found.push(Torrent {
+            found.push(Found::Ready(Torrent {
                 magnet: magnet_link(&info_hash, title),
                 title: title.to_string(),
                 size_bytes: parse_size(field("size")),
@@ -49,36 +56,29 @@ impl Indexer for Nyaa {
                 category: Category::Anime,
                 source: "nyaa",
                 info_hash,
-            });
+            }));
         }
         Ok(found)
     }
 }
 
-fn parse_size(text: &str) -> u64 {
-    let mut parts = text.split_whitespace();
-    let Some(Ok(amount)) = parts.next().map(str::parse::<f64>) else {
-        return 0;
-    };
-    let unit = match parts.next().unwrap_or_default() {
-        "KiB" => 1024.0,
-        "MiB" => 1024.0 * 1024.0,
-        "GiB" => 1024.0 * 1024.0 * 1024.0,
-        "TiB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
-        _ => 1.0,
-    };
-    (amount * unit) as u64
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::ready;
 
     const FIXTURE: &str = include_str!("fixtures/nyaa.xml");
 
+    fn parse(body: &str) -> Vec<Torrent> {
+        ready(
+            Nyaa.parse(body, &Ask::Words("one piece".to_string()))
+                .unwrap(),
+        )
+    }
+
     #[test]
     fn a_saved_feed_becomes_torrents() {
-        let found = Nyaa.parse(FIXTURE).unwrap();
+        let found = parse(FIXTURE);
         assert_eq!(found.len(), 3);
 
         let first = &found[0];
@@ -96,18 +96,21 @@ mod tests {
     #[test]
     fn an_item_with_no_hash_is_skipped_not_fatal() {
         let feed = "<rss><channel><item><title>No hash here</title></item></channel></rss>";
-        assert!(Nyaa.parse(feed).unwrap().is_empty());
+        assert!(parse(feed).is_empty());
     }
 
     #[test]
     fn a_broken_feed_says_so() {
-        assert!(Nyaa.parse("not xml at all").is_err());
+        assert!(
+            Nyaa.parse("not xml at all", &Ask::Browse(Category::Anime))
+                .is_err()
+        );
     }
 
     #[test]
-    fn sizes_come_back_in_bytes() {
-        assert_eq!(parse_size("812.8 MiB"), 852_282_572);
-        assert_eq!(parse_size("1.5 GiB"), 1_610_612_736);
-        assert_eq!(parse_size("nonsense"), 0);
+    fn browsing_asks_for_the_shelf_rather_than_for_words() {
+        let browse = Nyaa.urls(&Ask::Browse(Category::Anime));
+        assert!(browse[0].contains(SUBTITLED));
+        assert!(!browse[0].contains("&q="));
     }
 }

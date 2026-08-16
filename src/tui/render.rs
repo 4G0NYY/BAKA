@@ -125,6 +125,7 @@ fn search(frame: &mut Frame, app: &App, area: Rect) {
         };
         Row::new(vec![
             Cell::from(torrent.source),
+            Cell::from(torrent.category.to_string()),
             Cell::from(torrent.seeders.to_string()),
             Cell::from(human_size(torrent.size_bytes)),
             Cell::from(format!("{mark}{}", torrent.title)),
@@ -134,13 +135,14 @@ fn search(frame: &mut Frame, app: &App, area: Rect) {
     let table = Table::new(
         rows,
         [
+            Constraint::Length(12),
             Constraint::Length(6),
             Constraint::Length(6),
             Constraint::Length(10),
             Constraint::Min(10),
         ],
     )
-    .header(header(accent, ["SOURCE", "SEED", "SIZE", "TITLE"]))
+    .header(header(accent, ["SOURCE", "SHELF", "SEED", "SIZE", "TITLE"]))
     .row_highlight_style(theme::highlight(accent));
 
     frame.render_stateful_widget(table, results, &mut selection(app));
@@ -164,7 +166,7 @@ fn welcome(frame: &mut Frame, app: &App, area: Rect) {
 
     let hint = match app.searching {
         true => "Asking every source.",
-        false => "Type to search. Press ? for the keys.",
+        false => "Type to search, or press Enter to browse. ? for the keys.",
     };
     lines.push(Line::from(hint).centered());
 
@@ -355,7 +357,7 @@ fn status(frame: &mut Frame, app: &App, area: Rect) {
 
 fn hint(app: &App) -> &'static str {
     match (app.mode(), app.tab) {
-        (Mode::Typing, _) => "Enter searches. A magnet, an infohash or a file path downloads.",
+        (Mode::Typing, _) => "Enter searches, or browses when the box is empty.",
         (Mode::Editing, _) => "Type a value, Enter keeps it, Esc leaves it alone.",
         (Mode::Asking, _) => "Type a folder, Enter starts the download, Esc cancels.",
         (Mode::Confirming, _) => "y to go ahead, anything else to leave it running.",
@@ -414,7 +416,7 @@ fn question(frame: &mut Frame, app: &App) {
 fn help(frame: &mut Frame, app: &App) {
     const KEYS: [[&str; 2]; 13] = [
         ["/", "Focus the search box"],
-        ["Enter", "Search, or download the selected result"],
+        ["Enter", "Search, browse an empty box, or download"],
         ["Tab", "Next tab, Shift Tab for the previous one"],
         ["j k", "Move, arrows work too"],
         ["d", "Download to the default folder"],

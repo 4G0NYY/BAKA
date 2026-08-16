@@ -6,8 +6,9 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: phases 0 to 3 are done. `baka` with no arguments is the whole product: search,
-downloads, seeding and settings in one terminal interface. Phase 4 is next.
+Status: phases 0 to 4 are done. `baka` with no arguments is the whole product: search,
+downloads, seeding and settings in one terminal interface, across every source torlink
+has. Phase 5 is next.
 
 ## Decisions already made
 
@@ -105,6 +106,8 @@ Two things found while building:
 
 Phase 4 note: a source that needs a second request per result, 1337x being the obvious one,
 does not fit `url()` plus `parse()`. Extend the trait when that source lands, not before.
+It landed in phase 4, and the trait needed no second call: `parse` says which page a
+magnet is on and the search loop fetches it.
 
 ## Phase 2: engine (done)
 
@@ -180,20 +183,48 @@ Four things found while building:
   it, and OSC 52 was passed over because it fails silently on the consoles that do not
   support it, which looks like a broken key.
 
-## Phase 4: full source list
+## Phase 4: full source list (done)
 
-Target: source parity with torlink.
+Target was source parity with torlink. What shipped:
 
-- Movies: YTS, The Pirate Bay, 1337x, BitTorrented.
-- TV: EZTV, The Pirate Bay, 1337x, BitTorrented.
-- Anime: Nyaa, SubsPlease.
-- Games: FitGirl.
-- Games results carry a visible warning: they are executables and can run code.
-  Video and subtitle results cannot.
-- Empty search browses a curated library per category.
-- A new source appears in the Settings search group automatically. Phase 3 built that
-  list from the indexer registry, so adding a source is still one file and one line.
-- Each scraper is one file with its fixture next to it, so a broken site is a one file fix.
+- Eight sources, one file and one fixture each: YTS, The Pirate Bay, 1337x and
+  BitTorrented for films, EZTV, The Pirate Bay, 1337x and BitTorrented for shows, Nyaa
+  and SubsPlease for anime, FitGirl for games.
+- A source is asked an `Ask`: the words typed, or the shelf to list. An empty search
+  box is a browse, and a browse is per category, so a source that serves two of them is
+  asked for both listings. Nothing else changed shape, so `baka search` with no query
+  browses too.
+- A browse shows a share of every category in turn rather than sorting the lot by
+  seeders, which would hand the whole screen to whichever category has the biggest
+  swarms and bury the other three.
+- `Indexer` grew from `url()` to `urls()`, which answers with every mirror worth
+  trying and with nothing at all when a source has no listing or will not take a query
+  that short. That covers 1337x being reachable on one host and blocked on the next,
+  and BitTorrented sitting out a browse, without a second mechanism for either.
+- The 1337x problem phase 1 predicted turned out to need no trait change. `parse`
+  answers `Found::OnPage` for a result whose magnet is on a page of its own, and the
+  search loop fetches the best seeded ten of those and reads the first magnet link out
+  of each. Reading a magnet out of a page is the same job for every site, so it lives
+  in the loop rather than in the source.
+- Infohashes are normalised to hex, base32 magnets included, so the same release from
+  Nyaa and from SubsPlease collapses into one result instead of two.
+- Results carry the shelf they came from, in the TUI and in `baka search`, which is
+  what makes a merged browse readable.
+
+Four things found while building:
+
+- 1337x is behind a Cloudflare challenge on `1337x.to` from some networks, including
+  the one this was written on, and answers normally on `www.1377x.to`. That is why
+  `urls()` returns a list rather than one address. No client without a browser engine
+  can pass that challenge, so a host list is the whole of the answer available.
+- apibay writes its numbers as strings in a search and as numbers in its top 100 lists.
+  Both shapes have to parse or the browse and the search cannot share a scraper.
+- 1337x answers a phrase with anything carrying one of its words, so its rows are
+  filtered against the query before the second request is made rather than after. The
+  request saved is the point: a junk row costs a whole page fetch.
+- EZTV has no keyword search at all, only a feed of new releases. Rather than sit out
+  every search, it keeps the entries in that feed that match what was typed, which is
+  the honest version of what the API can do.
 
 ## Phase 5: headless
 
