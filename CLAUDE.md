@@ -23,11 +23,11 @@ TUI strings. Use a comma, a colon, parentheses, or two sentences.
 CI enforces this. To check locally:
 
 ```
-rg -n --hidden -g '!.git' '\x{2014}'
+bash scripts/no-em-dashes.sh
 ```
 
-No output means clean. The pattern is written as a hex escape so this file does not trip
-its own check. Do not paste the literal character to "fix" the pattern.
+Exit code 0 means clean. The script builds its pattern from raw bytes so that it holds no
+em dash itself. Do not paste the literal character into it to make it "clearer".
 
 ### 2. Simplicity is the point
 
@@ -109,11 +109,11 @@ Rules that follow from this:
 ## Commands
 
 ```
-cargo run              launch the TUI
-cargo test             unit and fixture tests
-cargo clippy -- -D warnings
+cargo run                       launch the TUI
+cargo test                      unit and fixture tests
+cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-rg -n --hidden -g '!.git' '\x{2014}'
+bash scripts/no-em-dashes.sh
 ```
 
 ## Definition of done

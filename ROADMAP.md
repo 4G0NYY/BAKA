@@ -6,7 +6,7 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: nothing is built yet. Phase 0 is the current work.
+Status: phase 0 is done. `baka` and `baka settings` run. Phase 1 is next.
 
 ## Decisions already made
 
@@ -61,20 +61,24 @@ Known gap: torlink uses WebTorrent and therefore reaches WebRTC browser peers.
 librqbit speaks TCP and uTP only. This affects browser-seeded swarms, not normal ones.
 Not planned for 1.0. Revisit only if real swarms turn out to need it.
 
-## Phase 0: foundations
+## Phase 0: foundations (done)
 
-Target: `baka --version` runs.
+Target was `baka --version`. What shipped:
 
-- `cargo init`, edition 2024, MSRV pinned in `Cargo.toml`.
-- Modules stubbed: `config`, `search`, `engine`, `tui`, `server`.
-- `config.rs` is the whole settings model: one `Settings` struct, a `Default` impl, and
-  load and save to TOML at the platform config dir via `directories`.
-- Every field carries its label and a one line description in that same place, so the
-  phase 3 Settings page renders from the struct instead of duplicating the list.
-- Error handling: `anyhow` at the binary boundary, `thiserror` for anything a caller
-  might want to match on.
-- CI on GitHub Actions: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
-  and the em dash check from CLAUDE.md.
+- Edition 2024, MSRV 1.85 pinned and checked in CI. 1.85 is both the edition floor and the
+  highest MSRV any dependency asks for.
+- Modules stubbed with the rule that governs each one: `search`, `engine`, `tui`, `server`.
+- `config.rs` holds the whole settings model: five grouped structs, `Default` impls, and
+  load and save to TOML under the platform config dir via `directories`.
+- `Settings::fields()` returns every setting with its group, label, description and a
+  mutable handle to the value. The phase 3 page renders and edits that list, so a field
+  missing from it cannot be reached by a user.
+- Missing files, partial files and keys from a newer version all load without an error.
+- `baka` prints the art from `stuff/` plus version and settings path. `baka settings`
+  lists every setting and writes the file on first run. `baka settings --path` prints
+  the path alone.
+- CI on GitHub Actions: `fmt`, `clippy --all-targets -D warnings`, `test` on Windows and
+  Linux, an MSRV job, and `scripts/no-em-dashes.sh`.
 
 ## Phase 1: search
 
