@@ -5,6 +5,7 @@ mod server;
 mod tui;
 
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -39,6 +40,26 @@ enum Command {
         /// or the path to a .torrent file.
         target: String,
     },
+    /// Download anything dropped into a directory.
+    Watch {
+        /// Where to look. Defaults to the watch folder on the Settings page.
+        directory: Option<PathBuf>,
+        /// Keep running after this terminal closes.
+        #[arg(long)]
+        daemon: bool,
+    },
+    /// Accept magnets over HTTP.
+    Serve {
+        /// Keep running after this terminal closes.
+        #[arg(long)]
+        daemon: bool,
+    },
+    /// Serve finished downloads over HTTP.
+    Files {
+        /// Keep running after this terminal closes.
+        #[arg(long)]
+        daemon: bool,
+    },
     /// Open the settings page without the rest of the interface.
     Settings {
         /// Print the settings file path and nothing else.
@@ -56,6 +77,21 @@ async fn main() -> Result<()> {
             search(&settings, query.as_deref().unwrap_or_default(), category).await
         }
         Some(Command::Get { target }) => get(&settings, &target).await,
+        Some(Command::Watch { directory, daemon }) => match daemon {
+            true => server::detach(),
+            false => {
+                let folder = directory.unwrap_or_else(|| settings.server.watch_folder.clone());
+                server::watch(&settings, &folder).await
+            }
+        },
+        Some(Command::Serve { daemon }) => match daemon {
+            true => server::detach(),
+            false => server::serve(&settings).await,
+        },
+        Some(Command::Files { daemon }) => match daemon {
+            true => server::detach(),
+            false => server::files(&settings).await,
+        },
         Some(Command::Settings { path }) => match path {
             true => print_path(),
             false => tui::settings_page(settings).await,

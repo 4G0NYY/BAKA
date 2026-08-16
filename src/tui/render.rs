@@ -10,7 +10,7 @@ use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Ta
 use super::theme;
 use super::{App, Mode, Tab};
 use crate::config::Accent;
-use crate::engine::{Progress, State, human_eta};
+use crate::engine::{Progress, human_eta};
 use crate::search::human_size;
 
 const ART: &str = include_str!("../../stuff/ascii-art.txt");
@@ -208,7 +208,7 @@ fn downloads(frame: &mut Frame, app: &App, area: Rect) {
             Cell::from(format!("{}/s", human_size(torrent.download_bps))),
             Cell::from(human_eta(torrent.eta)),
             Cell::from(torrent.peers.to_string()),
-            Cell::from(label(torrent.state)),
+            Cell::from(torrent.state.to_string()),
         ])
     });
 
@@ -248,7 +248,7 @@ fn seeding(frame: &mut Frame, app: &App, area: Rect) {
             Cell::from(human_size(torrent.uploaded_bytes)),
             Cell::from(format!("{}/s", human_size(torrent.upload_bps))),
             Cell::from(torrent.peers.to_string()),
-            Cell::from(label(torrent.state)),
+            Cell::from(torrent.state.to_string()),
         ])
     });
 
@@ -483,16 +483,6 @@ fn bar(torrent: &Progress) -> String {
         "\u{2591}".repeat(WIDTH - filled.min(WIDTH)),
         share * 100.0
     )
-}
-
-fn label(state: State) -> &'static str {
-    match state {
-        State::Checking => "checking",
-        State::Active => "running",
-        State::Queued => "queued",
-        State::Paused => "paused",
-        State::Failed => "failed",
-    }
 }
 
 fn popup(area: Rect, width: u16, height: u16) -> Rect {

@@ -941,12 +941,21 @@ mod tests {
         let mut app = App::new(Settings::default(), None);
         app.tab = Tab::Settings;
         app.typing = false;
-        let drawn = screen(&mut app);
+
+        // More settings than rows on a screen, so the page is read the way a user
+        // reads it: by moving down it.
+        let mut drawn = String::new();
+        for at in 0..app.settings.fields().len() {
+            app.cursor[Tab::Settings.index()] = at;
+            drawn.push_str(&screen(&mut app));
+        }
+
         for group in [
             crate::config::DOWNLOADS,
             crate::config::SEEDING,
             crate::config::NETWORK,
             crate::config::SEARCH,
+            crate::config::SERVER,
             crate::config::INTERFACE,
         ] {
             assert!(drawn.contains(group), "{group}");

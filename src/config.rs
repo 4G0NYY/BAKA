@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 
 use directories::{BaseDirs, UserDirs};
@@ -32,6 +33,7 @@ pub struct Settings {
     pub seeding: Seeding,
     pub network: Network,
     pub search: Search,
+    pub server: Server,
     pub interface: Interface,
 }
 
@@ -107,6 +109,17 @@ impl Sources {
     }
 }
 
+/// What the headless modes need. They read this file and nothing else, so a server
+/// with no terminal on it is configured the same way a desktop is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Server {
+    pub bind: IpAddr,
+    pub intake_port: u16,
+    pub files_port: u16,
+    pub watch_folder: PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Interface {
@@ -169,6 +182,19 @@ impl Default for Search {
             // YTS reports 0 seeds for most of its catalogue, so a floor of 1 would
             // quietly hide a whole source.
             min_seeders: 0,
+        }
+    }
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            // This machine only. `baka serve` downloads whatever it is handed, so
+            // reaching it from the rest of the network is a decision, not a default.
+            bind: Ipv4Addr::LOCALHOST.into(),
+            intake_port: 4241,
+            files_port: 4242,
+            watch_folder: default_download_folder().join("watch"),
         }
     }
 }
@@ -357,6 +383,34 @@ impl Settings {
             )
             .zero_means("no minimum"),
             Field::new(
+                SERVER,
+                "Bind address",
+                "Address the headless modes listen on. 127.0.0.1 is this machine only.",
+                Value::Address(&mut self.server.bind),
+            )
+            .needs_restart(),
+            Field::new(
+                SERVER,
+                "Magnet intake port",
+                "Port the magnet intake accepts links on.",
+                Value::Port(&mut self.server.intake_port),
+            )
+            .needs_restart(),
+            Field::new(
+                SERVER,
+                "File serving port",
+                "Port finished downloads are served on.",
+                Value::Port(&mut self.server.files_port),
+            )
+            .needs_restart(),
+            Field::new(
+                SERVER,
+                "Watch folder",
+                "Where dropped magnets and torrent files are picked up from.",
+                Value::Path(&mut self.server.watch_folder),
+            )
+            .needs_restart(),
+            Field::new(
                 INTERFACE,
                 "Accent colour",
                 "Colour used for highlights and the BAKA wordmark.",
@@ -384,10 +438,12 @@ pub const DOWNLOADS: &str = "Downloads";
 pub const SEEDING: &str = "Seeding";
 pub const NETWORK: &str = "Network";
 pub const SEARCH: &str = "Search";
+pub const SERVER: &str = "Server";
 pub const INTERFACE: &str = "Interface";
 
 pub enum Value<'a> {
     Flag(&'a mut bool),
+    Address(&'a mut IpAddr),
     Port(&'a mut u16),
     Count(&'a mut u32),
     Ratio(&'a mut f32),
@@ -448,6 +504,7 @@ impl<'a> Field<'a> {
     pub fn display(&self) -> String {
         match &self.value {
             Value::Flag(on) => String::from(if **on { "on" } else { "off" }),
+            Value::Address(address) => address.to_string(),
             Value::Port(port) => port.to_string(),
             Value::Count(count) => match self.zero_means {
                 Some(word) if **count == 0 => word.to_string(),
@@ -486,8 +543,9 @@ impl<'a> Field<'a> {
                 let stepped = if up { **ratio + 0.1 } else { **ratio - 0.1 };
                 **ratio = (stepped.clamp(0.0, 100.0) * 100.0).round() / 100.0;
             }
-            // A folder has no next one to step to. It is typed.
-            Value::Path(_) => {}
+            // Neither a folder nor an address has a next one to step to. Both are
+            // typed.
+            Value::Path(_) | Value::Address(_) => {}
         }
     }
 
@@ -496,6 +554,7 @@ impl<'a> Field<'a> {
     pub fn typed(&self) -> Option<String> {
         match &self.value {
             Value::Flag(_) | Value::Accent(_) => None,
+            Value::Address(address) => Some(address.to_string()),
             Value::Port(port) => Some(port.to_string()),
             Value::Count(count) => Some(count.to_string()),
             Value::Ratio(ratio) => Some(format!("{ratio:.2}")),
@@ -508,6 +567,13 @@ impl<'a> Field<'a> {
         let floor = self.at_least;
         match &mut self.value {
             Value::Flag(_) | Value::Accent(_) => Err("this one changes with the arrow keys"),
+            Value::Address(address) => match typed.parse() {
+                Ok(parsed) => {
+                    **address = parsed;
+                    Ok(())
+                }
+                Err(_) => Err("an address like 127.0.0.1 or 0.0.0.0"),
+            },
             Value::Port(port) => match typed.parse::<u16>() {
                 Ok(0) | Err(_) => Err("a port is a number from 1 to 65535"),
                 Ok(parsed) => {

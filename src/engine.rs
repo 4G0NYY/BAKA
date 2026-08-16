@@ -1,6 +1,7 @@
 //! The only module that knows librqbit exists. Everything above it speaks BAKA types.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::net::Ipv6Addr;
 use std::num::NonZeroU32;
@@ -73,6 +74,18 @@ pub enum State {
     Queued,
     Paused,
     Failed,
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Checking => "checking",
+            Self::Active => "running",
+            Self::Queued => "queued",
+            Self::Paused => "paused",
+            Self::Failed => "failed",
+        })
+    }
 }
 
 /// Whether the user wants this torrent running. The queue may stop a torrent it is

@@ -86,6 +86,7 @@ environment variables and no persistent flags to hunt for.
 | Seeding | Seed after completion, maximum concurrent seeds, upload rate limit, stop at ratio |
 | Network | Listen port, DHT, UPnP port mapping, peer limit per torrent |
 | Search | Which sources are enabled, per source timeout, result limit, minimum seeders |
+| Server | Bind address, magnet intake port, file serving port, watch folder |
 | Interface | Accent colour, confirm before removing, game source warnings |
 
 Settings apply immediately. The few that cannot, such as the listen port, say so on their
@@ -124,12 +125,35 @@ Deleting that folder costs you the progress on anything still downloading, and n
 | `baka get <magnet\|infohash\|file>` | Download one thing and exit |
 | `baka search ["<query>"] [--category <name>]` | Print results as text, or browse with no query |
 | `baka settings` | Open the settings page on its own |
-| `baka watch <dir>` | Download anything dropped into a directory |
+| `baka watch [dir]` | Download anything dropped into a directory |
 | `baka serve` | Accept magnets over HTTP |
 | `baka files` | Serve finished downloads over HTTP |
-| `baka attach` | Attach a TUI to a running daemon |
 
-Add `--daemon` to keep running after you log out. `baka --help` lists everything.
+Add `--daemon` to `watch`, `serve` or `files` to keep running after you close the
+terminal or log out. `baka --help` lists everything.
+
+`baka watch` picks up magnet links, bare infohashes and `.torrent` files. Drop a file
+in, and a moment later it is renamed to `.taken` or, if there was nothing usable in it,
+to `.failed`. With no directory given it uses the watch folder from the Settings page.
+
+`baka serve` answers `POST` with a magnet link, an infohash or a file path in the body,
+one per line, and `GET` with what is currently running:
+
+```
+curl -d "magnet:?xt=urn:btih:..." http://127.0.0.1:4241
+curl http://127.0.0.1:4241
+```
+
+`baka files` serves the download folder over HTTP, with directory listings and range
+requests, so a browser or a player can open a finished film without copying it first.
+
+Both listen on `127.0.0.1` by default, which is this machine only. The Settings page has
+the bind address and both ports if you want them reachable from elsewhere. Think before
+you widen the magnet intake: it downloads whatever it is handed.
+
+Run one BAKA at a time. The interface, `baka get` and the headless modes all open the
+same session, and two of them at once fight over it. Attaching a second interface to a
+running one is what `baka attach` will be for.
 
 ## Sources
 

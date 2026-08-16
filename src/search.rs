@@ -414,7 +414,7 @@ fn base32(raw: &str) -> Option<String> {
     Some(hex)
 }
 
-fn encode(input: &str) -> String {
+pub fn encode(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for byte in input.bytes() {
         match byte {

@@ -6,9 +6,10 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: phases 0 to 4 are done. `baka` with no arguments is the whole product: search,
+Status: phases 0 to 5 are done. `baka` with no arguments is the whole product: search,
 downloads, seeding and settings in one terminal interface, across every source torlink
-has. Phase 5 is next.
+has, and the same binary runs headless on a box with no terminal at all. Phase 6,
+packaging, is next.
 
 ## Decisions already made
 
@@ -70,7 +71,7 @@ Target was `baka --version`. What shipped:
 - Edition 2024, MSRV pinned and checked in CI. It started at 1.85, the edition floor, and
   moved to 1.88 in phase 2 for the reason recorded there.
 - Modules stubbed with the rule that governs each one: `search`, `engine`, `tui`, `server`.
-- `config.rs` holds the whole settings model: five grouped structs, `Default` impls, and
+- `config.rs` holds the whole settings model: one struct per group, `Default` impls, and
   load and save to TOML under the platform config dir via `directories`.
 - `Settings::fields()` returns every setting with its group, label, description and a
   mutable handle to the value. The phase 3 page renders and edits that list, so a field
@@ -226,19 +227,45 @@ Four things found while building:
   every search, it keeps the entries in that feed that match what was typed, which is
   the honest version of what the API can do.
 
-## Phase 5: headless
+## Phase 5: headless (done)
 
-Target: BAKA is useful on a server with no terminal attached.
+Target was BAKA being useful on a server with no terminal attached. What shipped:
 
-- `baka watch <dir>`: magnets, infohashes and `.torrent` files dropped in a directory
-  are picked up and downloaded.
-- `baka serve`: small HTTP endpoint that accepts magnets.
-- `baka files`: serves finished downloads over HTTP.
-- `--daemon`: detach and survive logout. On Windows this means a detached process plus a
-  named pipe for control, not a service, unless a service turns out to be needed.
-- Headless modes read the same `config.toml`. `baka settings` opens the page on its own so
-  a server can be configured without the full TUI, and `baka settings --path` prints the
-  file location for anyone who would rather use an editor.
+- `baka watch [dir]` picks up magnet links, bare infohashes and `.torrent` files. A
+  handled file is renamed to `.taken`, or to `.failed` when there was nothing in it,
+  so the next look leaves it alone and you can see which was which.
+- `baka serve`: `POST` a magnet, an infohash or a file path, one per line. `GET` says
+  what is running.
+- `baka files`: the download folder over HTTP, with directory listings and range
+  requests, so a browser or a player can open a finished film in place.
+- `--daemon` on any of the three. It starts this same command without the flag,
+  detached and writing nowhere. On Windows that is `DETACHED_PROCESS` plus its own
+  process group; on Unix it is its own process group. No service, no named pipe.
+- All three run the phase 3 queue on a one second tick, so the concurrency limits and
+  stop at ratio mean the same thing with nobody watching, and Ctrl+C stops rather than
+  kills.
+- A Server group on the Settings page: bind address, both ports and the watch folder.
+  The bind address defaults to loopback, because the magnet intake downloads whatever
+  it is handed and reaching it from the rest of the network should be a decision.
+- The HTTP is written here rather than pulled in. It is a request line, the headers
+  worth reading, a body, and a response, and it fits in one file with its tests.
+
+Three things found while building:
+
+- Adding a magnet blocks until peers hand over the file list, which phase 2 already
+  knew. It matters more here: a watched folder with ten things in it worked through
+  them one at a time, and an HTTP client sat on an open request for the whole wait. All
+  three modes now hand the add to a task and answer with what they understood.
+- A file still being copied into the watched folder is not ready to be read. How long
+  ago it was written is the only signal available without watching the filesystem
+  itself, so a file has to have been still for one look before it is taken.
+- Path safety needs both halves. Refusing `..` in a request stops the obvious climb,
+  and comparing the real path both sides resolve to stops a link inside the folder
+  pointing out of it.
+
+Left as it is: one BAKA at a time. The interface, `baka get` and the headless modes all
+open the same session, which has been true since phase 2. `baka attach` in phase 7 is
+what makes a second one useful rather than a conflict.
 
 ## Phase 6: packaging
 
