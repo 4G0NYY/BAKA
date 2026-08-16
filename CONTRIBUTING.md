@@ -35,7 +35,7 @@ What the tag then does:
 | --- | --- |
 | `build` | `baka.exe` for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, each zipped with the README and the licence |
 | `release` | A GitHub release carrying both archives and `SHA256SUMS.txt` |
-| `crates` | `cargo publish`, which is what `cargo install baka` reads |
+| `crates` | `cargo publish`, which is what `cargo install b-baka` reads |
 | `winget` | A pull request against `microsoft/winget-pkgs` from the manifests in `packaging/winget/` |
 | `scoop` | `bucket/baka.json` on `main`, pointed at the new archives |
 
@@ -52,8 +52,9 @@ on every pull request so a broken template is caught before a release needs them
 
 ### The first release only
 
-- Reserve the name on crates.io by publishing once. Nothing else in the release can do it
-  for you.
+- Reserve `b-baka` on crates.io by publishing once. Nothing else in the release can do it
+  for you. The package is `b-baka` because `baka` was taken, the binary it installs is
+  still `baka`.
 - The first winget submission is reviewed by a person, so it lands later than the rest.
 - `bucket/baka.json` is written by the release job, so `scoop bucket add baka
   https://github.com/4G0NYY/BAKA` only works once there has been a release.

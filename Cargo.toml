@@ -1,5 +1,5 @@
 [package]
-name = "baka"
+name = "b-baka"
 version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
@@ -9,6 +9,11 @@ license = "MIT"
 readme = "README.md"
 keywords = ["torrent", "bittorrent", "tui", "cli", "search"]
 categories = ["command-line-utilities"]
+
+# The crates.io name "baka" was taken, so the package stutters and the binary does not.
+[[bin]]
+name = "baka"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.104"

@@ -37,11 +37,12 @@ scoop install baka
 ```
 
 ```
-cargo install baka
+cargo install b-baka
 ```
 
 winget and Scoop cover Windows, on x64 and on arm64. `cargo install` works anywhere Rust
-does, including Linux and macOS.
+does, including Linux and macOS. The crates.io name stutters because `baka` was already
+taken there, but the command it installs is still `baka`.
 
 Every release also carries the archives on their own, with a `SHA256SUMS.txt` next to
 them, if you would rather unzip the binary and put it somewhere yourself:

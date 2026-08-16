@@ -19,7 +19,7 @@ tag builds it for both Windows architectures and publishes it. Phase 7, 1.0, is 
 | Interface | TUI first, CLI subcommands alongside | Matches torlink's shape and keeps headless and scripted use possible. |
 | Settings | One Settings page, one TOML file, no environment variables | Every knob is in one place you can find without reading docs. |
 | Sources | Same curated list as torlink | Parity out of the box, no setup for the user. |
-| Platforms for 1.0 | Windows via winget, Scoop and Chocolatey, plus `cargo install baka` everywhere | Windows is the primary target. `cargo install` covers Linux and macOS for free. |
+| Platforms for 1.0 | Windows via winget, Scoop and Chocolatey, plus `cargo install b-baka` everywhere | Windows is the primary target. `cargo install` covers Linux and macOS for free. |
 | Layout | One crate, several modules | Five crates for a tool this size is overhead, not structure. Split only when compile times justify it. |
 
 ## Settings model
@@ -284,7 +284,7 @@ Target was installing in one command. What shipped:
 - The Scoop bucket is this repository. The release job writes `bucket/baka.json` on
   `main`, and `scoop bucket add baka https://github.com/4G0NYY/BAKA` is what points Scoop
   at it.
-- `cargo publish` on the same tag, which is what `cargo install baka` reads.
+- `cargo publish` on the same tag, which is what `cargo install b-baka` reads.
 - `scripts/manifests.sh` fills the version and the two checksums into both manifest sets
   and refuses to write a file with a placeholder left in it. CI renders them on every
   pull request, so a template that no longer matches its script fails then rather than
