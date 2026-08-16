@@ -9,6 +9,18 @@ license = "MIT"
 readme = "README.md"
 keywords = ["torrent", "bittorrent", "tui", "cli", "search"]
 categories = ["command-line-utilities"]
+# stuff/ holds the banner that render.rs includes at compile time, so it is not repo-only
+# material and must never join this list.
+exclude = [
+    ".gitattributes",
+    ".github/",
+    ".gitignore",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "ROADMAP.md",
+    "packaging/",
+    "scripts/",
+]
 
 # The crates.io name "baka" was taken, so the package stutters and the binary does not.
 [[bin]]
