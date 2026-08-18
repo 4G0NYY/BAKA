@@ -18,18 +18,18 @@ stages:
 
 variables:
   CARGO_TERM_COLOR: always
-  # Keep the registry inside the workspace so `cache:` can carry it between jobs.
-  CARGO_HOME: $CI_PROJECT_DIR/.cargo
 
 default:
   tags: [docker]
+  # Only target/ is cached. CARGO_HOME deliberately stays at its default outside the
+  # workspace: pulling the registry into $CI_PROJECT_DIR (the usual trick for caching
+  # it) puts thousands of vendored crates under the checkout, and scripts/no-em-dashes.sh
+  # scans the working tree — it then fails on em dashes in other people's changelogs.
   cache:
     key:
       files:
         - Cargo.lock
     paths:
-      - .cargo/registry/index
-      - .cargo/registry/cache
       - target/
 
 # ---------------------------------------------------------------- ci.yml ----
