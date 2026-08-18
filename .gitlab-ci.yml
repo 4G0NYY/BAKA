@@ -1,4 +1,4 @@
-# GitLab CI/CD — translated from .github/workflows/ci.yml and release.yml.
+# GitLab CI/CD, translated from .github/workflows/ci.yml and release.yml.
 # The GitHub workflows are left in place, so the project still builds on GitHub.
 #
 # Runners on this instance:
@@ -24,7 +24,7 @@ default:
   # Only target/ is cached. CARGO_HOME deliberately stays at its default outside the
   # workspace: pulling the registry into $CI_PROJECT_DIR (the usual trick for caching
   # it) puts thousands of vendored crates under the checkout, and scripts/no-em-dashes.sh
-  # scans the working tree — it then fails on em dashes in other people's changelogs.
+  # scans the working tree, so the check then fails on dashes in vendored changelogs.
   cache:
     key:
       files:
@@ -193,7 +193,7 @@ crates:
   script:
     - |
       if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
-        echo "CARGO_REGISTRY_TOKEN is not set — skipping the crates.io publish."
+        echo "CARGO_REGISTRY_TOKEN is not set, skipping the crates.io publish."
         exit 0
       fi
       cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
@@ -213,7 +213,7 @@ scoop:
     - |
       set -eu
       if [ -z "${BAKA_BUCKET_TOKEN:-}" ]; then
-        echo "BAKA_BUCKET_TOKEN is not set — skipping the Scoop bucket update."
+        echo "BAKA_BUCKET_TOKEN is not set, skipping the Scoop bucket update."
         exit 0
       fi
       apk add --no-cache git bash
