@@ -1,0 +1,236 @@
+# GitLab CI/CD — translated from .github/workflows/ci.yml and release.yml.
+# The GitHub workflows are left in place, so the project still builds on GitHub.
+#
+# Runners on this instance:
+#   docker         containerised jobs on moe-gitlab01 (docker + dind).
+#   crimsonrunner  base-OS shell runner on server10 (host Docker, SSH to the swarm).
+#   windows        does not exist yet. The jobs that genuinely need a native Windows
+#                  toolchain are kept here, tagged `windows` and `when: manual`, so a
+#                  pipeline never waits on a runner that cannot appear. Register a
+#                  runner with that tag and they start working as written.
+
+stages:
+  - check
+  - test
+  - build
+  - release
+  - publish
+
+variables:
+  CARGO_TERM_COLOR: always
+  # Keep the registry inside the workspace so `cache:` can carry it between jobs.
+  CARGO_HOME: $CI_PROJECT_DIR/.cargo
+
+default:
+  tags: [docker]
+  cache:
+    key:
+      files:
+        - Cargo.lock
+    paths:
+      - .cargo/registry/index
+      - .cargo/registry/cache
+      - target/
+
+# ---------------------------------------------------------------- ci.yml ----
+# GitHub ran these on push to main and on every pull request; the GitLab
+# equivalent is the default branch plus merge request pipelines.
+.ci_rules:
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+check:
+  extends: .ci_rules
+  stage: check
+  image: rust:latest
+  before_script:
+    - rustup component add rustfmt clippy
+    # The manifest check renders JSON through python3, which the rust image lacks.
+    - apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+  script:
+    - cargo fmt --check
+    - cargo clippy --all-targets -- -D warnings
+    - echo "No em dashes"
+    - bash scripts/no-em-dashes.sh
+    - echo "The release manifests still render"
+    # A block scalar, because these lines contain ": " and YAML would otherwise
+    # read them as mapping keys.
+    - |
+      bash scripts/manifests.sh 9.9.9 abc123 def456 rendered
+      python3 -m json.tool rendered/baka.json > /dev/null
+      grep -q "PackageVersion: 9.9.9" rendered/winget/4G0NYY.BAKA.installer.yaml
+      grep -q '"version": "9.9.9"' rendered/baka.json
+
+test:linux:
+  extends: .ci_rules
+  stage: test
+  image: rust:latest
+  script:
+    - cargo test
+
+# The other half of the GitHub `test` matrix (windows-latest). Parked: see the
+# runner note at the top of this file.
+test:windows:
+  extends: .ci_rules
+  stage: test
+  tags: [windows]
+  when: manual
+  allow_failure: true
+  cache: []
+  script:
+    - cargo test
+
+msrv:
+  extends: .ci_rules
+  stage: check
+  image: rust:1.88.0
+  script:
+    - cargo check
+
+# ----------------------------------------------------------- release.yml ----
+# Tag-driven, exactly as on GitHub: `git push origin vX.Y.Z`.
+.release_rules:
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+
+version:
+  extends: .release_rules
+  stage: build
+  image: rust:latest
+  cache: []
+  script:
+    - echo "The tag and Cargo.toml agree"
+    - |
+      number=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+      if [ "v$number" != "$CI_COMMIT_TAG" ]; then
+        echo "tag $CI_COMMIT_TAG does not match Cargo.toml $number" >&2
+        exit 1
+      fi
+      echo "NUMBER=$number" >> version.env
+  artifacts:
+    reports:
+      # Downstream jobs read this as $NUMBER, the way they read the job output on GitHub.
+      dotenv: version.env
+
+# Native Windows builds. Parked (see the runner note at the top). `allow_failure`
+# stays false so the release below waits for real binaries instead of publishing
+# an empty release the moment a tag is pushed.
+build:windows:
+  extends: .release_rules
+  stage: build
+  tags: [windows]
+  when: manual
+  allow_failure: false
+  needs: [version]
+  cache: []
+  parallel:
+    matrix:
+      - TARGET: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+  # Written for a PowerShell-shell Windows runner (the gitlab-runner default on
+  # Windows), which is why the variables are read as $env:NAME rather than $NAME.
+  script:
+    - rustup target add $env:TARGET
+    - cargo build --release --locked --target $env:TARGET
+    - $name = "baka-$env:NUMBER-$env:TARGET"
+    - New-Item -ItemType Directory $name | Out-Null
+    - Copy-Item "target/$env:TARGET/release/baka.exe", README.md, LICENSE $name
+    - Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+  artifacts:
+    paths:
+      - baka-*.zip
+
+release:
+  extends: .release_rules
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - version
+    - build:windows
+  cache: []
+  script:
+    - |
+      set -eu
+      mkdir -p archives && mv baka-*.zip archives/
+      cd archives
+      sha256sum *.zip | tee SHA256SUMS.txt
+      echo "X64=$(awk '/x86_64/ { print $1 }' SHA256SUMS.txt)"    >> ../sums.env
+      echo "ARM64=$(awk '/aarch64/ { print $1 }' SHA256SUMS.txt)" >> ../sums.env
+      # GitLab releases carry links, not blobs, so the archives go to the project's
+      # generic package registry first and the release points at them there.
+      for f in *; do
+        curl --fail --silent --show-error --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --upload-file "$f" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/$f"
+      done
+  artifacts:
+    reports:
+      dotenv: sums.env
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: $CI_COMMIT_TAG
+    # `--generate-notes` has no GitLab equivalent; the tag message is used instead.
+    description: $CI_COMMIT_TAG
+    assets:
+      links:
+        - name: baka-$NUMBER-x86_64-pc-windows-msvc.zip
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/baka-$NUMBER-x86_64-pc-windows-msvc.zip
+        - name: baka-$NUMBER-aarch64-pc-windows-msvc.zip
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/baka-$NUMBER-aarch64-pc-windows-msvc.zip
+        - name: SHA256SUMS.txt
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/SHA256SUMS.txt
+
+# crates.io needs no Windows runner, so unlike the rest of the release chain this
+# one runs by itself on a tag. Self-skips when CARGO_REGISTRY_TOKEN is unset,
+# matching the `if: env.TOKEN != ''` guard on GitHub.
+crates:
+  extends: .release_rules
+  stage: publish
+  image: rust:latest
+  needs: [version]
+  script:
+    - |
+      if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+        echo "CARGO_REGISTRY_TOKEN is not set — skipping the crates.io publish."
+        exit 0
+      fi
+      cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
+
+# The Scoop bucket lives in this repo, so the manifest is committed back to the
+# default branch. Needs a token that may push: set BAKA_BUCKET_TOKEN to a project
+# access token with `write_repository`. Unset = skipped, so the release stays green.
+scoop:
+  extends: .release_rules
+  stage: publish
+  image: alpine:3.20
+  needs:
+    - version
+    - release
+  cache: []
+  script:
+    - |
+      set -eu
+      if [ -z "${BAKA_BUCKET_TOKEN:-}" ]; then
+        echo "BAKA_BUCKET_TOKEN is not set — skipping the Scoop bucket update."
+        exit 0
+      fi
+      apk add --no-cache git bash
+      bash scripts/manifests.sh "$NUMBER" "$X64" "$ARM64" rendered
+      echo "Point the bucket at the new release"
+      mkdir -p bucket
+      mv rendered/baka.json bucket/baka.json
+      git config user.name "gitlab-ci"
+      git config user.email "gitlab-ci@$CI_SERVER_HOST"
+      git add bucket/baka.json
+      git diff --cached --quiet || git commit -m "Scoop manifest for $CI_COMMIT_TAG"
+      git push "https://oauth2:${BAKA_BUCKET_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_DEFAULT_BRANCH}"
+
+# The winget job has no GitLab equivalent and is deliberately not translated: it
+# opens a pull request against microsoft/winget-pkgs on GitHub, so it needs GitHub
+# regardless of where this repository is hosted. Keep publishing winget releases
+# from .github/workflows/release.yml, or run wingetcreate by hand:
+#
+#   bash scripts/manifests.sh <version> <x64-sha256> <arm64-sha256> rendered
+#   wingetcreate submit rendered/winget --token <github-token>
