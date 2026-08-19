@@ -165,6 +165,9 @@ release:
   script:
     - |
       set -eu
+      # The release-cli image is Alpine and ships no curl, only busybox wget, which
+      # cannot send an upload with a header.
+      apk add --no-cache curl
       mkdir -p archives && mv baka-*.zip baka-*.tar.gz archives/
       cd archives
       sha256sum * | tee SHA256SUMS.txt
