@@ -8,13 +8,13 @@ NestedInstallerFiles:
     PortableCommandAlias: baka
 Commands:
   - baka
-ReleaseNotesUrl: https://github.com/4G0NYY/BAKA/releases/tag/v{{VERSION}}
+ReleaseNotesUrl: https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v{{VERSION}}
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/4G0NYY/BAKA/releases/download/v{{VERSION}}/baka-{{VERSION}}-x86_64-pc-windows-msvc.zip
+    InstallerUrl: https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v{{VERSION}}/downloads/baka-{{VERSION}}-x86_64-pc-windows-msvc.zip
     InstallerSha256: {{SHA256_X64}}
   - Architecture: arm64
-    InstallerUrl: https://github.com/4G0NYY/BAKA/releases/download/v{{VERSION}}/baka-{{VERSION}}-aarch64-pc-windows-msvc.zip
+    InstallerUrl: https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v{{VERSION}}/downloads/baka-{{VERSION}}-aarch64-pc-windows-msvc.zip
     InstallerSha256: {{SHA256_ARM64}}
 ManifestType: installer
 ManifestVersion: 1.6.0

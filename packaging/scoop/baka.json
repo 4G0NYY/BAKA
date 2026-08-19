@@ -1,15 +1,15 @@
 {
     "version": "{{VERSION}}",
     "description": "BitTorrent Acquisition & Keyword Aggregator, a terminal torrent search and download tool",
-    "homepage": "https://github.com/4G0NYY/BAKA",
+    "homepage": "https://gitlab.ramon.moe/4G0NYY/BAKA",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/4G0NYY/BAKA/releases/download/v{{VERSION}}/baka-{{VERSION}}-x86_64-pc-windows-msvc.zip",
+            "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v{{VERSION}}/downloads/baka-{{VERSION}}-x86_64-pc-windows-msvc.zip",
             "hash": "{{SHA256_X64}}"
         },
         "arm64": {
-            "url": "https://github.com/4G0NYY/BAKA/releases/download/v{{VERSION}}/baka-{{VERSION}}-aarch64-pc-windows-msvc.zip",
+            "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v{{VERSION}}/downloads/baka-{{VERSION}}-aarch64-pc-windows-msvc.zip",
             "hash": "{{SHA256_ARM64}}"
         }
     },

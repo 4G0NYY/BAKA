@@ -57,7 +57,7 @@ on every pull request so a broken template is caught before a release needs them
   still `baka`.
 - The first winget submission is reviewed by a person, so it lands later than the rest.
 - `bucket/baka.json` is written by the release job, so `scoop bucket add baka
-  https://github.com/4G0NYY/BAKA` only works once there has been a release.
+  https://gitlab.ramon.moe/4G0NYY/BAKA` only works once there has been a release.
 
 ### What a release does not touch
 

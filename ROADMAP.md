@@ -282,7 +282,7 @@ Target was installing in one command. What shipped:
   `wingetcreate` on the same tag. `InstallerType: zip` with a nested portable, so winget
   puts `baka` on `PATH` itself.
 - The Scoop bucket is this repository. The release job writes `bucket/baka.json` on
-  `main`, and `scoop bucket add baka https://github.com/4G0NYY/BAKA` is what points Scoop
+  `main`, and `scoop bucket add baka https://gitlab.ramon.moe/4G0NYY/BAKA` is what points Scoop
   at it.
 - `cargo publish` on the same tag, which is what `cargo install b-baka` reads.
 - `scripts/manifests.sh` fills the version and the two checksums into both manifest sets

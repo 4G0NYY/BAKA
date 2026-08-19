@@ -32,7 +32,7 @@ winget install BAKA
 ```
 
 ```powershell
-scoop bucket add baka https://github.com/4G0NYY/BAKA
+scoop bucket add baka https://gitlab.ramon.moe/4G0NYY/BAKA
 scoop install baka
 ```
 
@@ -208,7 +208,7 @@ network and to the indexers, and that is all.
 ## Build
 
 ```
-git clone https://github.com/4G0NYY/BAKA
+git clone https://gitlab.ramon.moe/4G0NYY/BAKA
 cd BAKA
 cargo run
 ```
