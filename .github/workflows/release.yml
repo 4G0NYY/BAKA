@@ -93,28 +93,6 @@ jobs:
       - if: env.TOKEN != ''
         run: cargo publish --locked --token "$TOKEN"
 
-  winget:
-    needs: [version, release]
-    runs-on: windows-latest
-    env:
-      TOKEN: ${{ secrets.WINGET_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-      - if: env.TOKEN != ''
-        shell: bash
-        run: >
-          bash scripts/manifests.sh
-          "${{ needs.version.outputs.number }}"
-          "${{ needs.release.outputs.x64 }}"
-          "${{ needs.release.outputs.arm64 }}"
-          rendered
-      - name: Open the pull request against microsoft/winget-pkgs
-        if: env.TOKEN != ''
-        shell: pwsh
-        run: |
-          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          ./wingetcreate.exe submit rendered/winget --token $env:TOKEN
-
   scoop:
     needs: [version, release]
     runs-on: ubuntu-latest
@@ -127,6 +105,7 @@ jobs:
           "${{ needs.version.outputs.number }}"
           "${{ needs.release.outputs.x64 }}"
           "${{ needs.release.outputs.arm64 }}"
+          SKIP
           rendered
       - name: Point the bucket at the new release
         run: |

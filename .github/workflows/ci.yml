@@ -23,10 +23,11 @@ jobs:
         run: bash scripts/no-em-dashes.sh
       - name: The release manifests still render
         run: |
-          bash scripts/manifests.sh 9.9.9 abc123 def456 rendered
+          bash scripts/manifests.sh 9.9.9 abc123 def456 fee789 rendered
           python3 -m json.tool rendered/baka.json > /dev/null
-          grep -q "PackageVersion: 9.9.9" rendered/winget/4G0NYY.BAKA.installer.yaml
           grep -q '"version": "9.9.9"' rendered/baka.json
+          grep -q '^pkgver=9.9.9$' rendered/aur/PKGBUILD
+          bash -n rendered/aur/PKGBUILD
 
   test:
     strategy:

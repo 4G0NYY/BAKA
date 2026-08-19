@@ -9,7 +9,8 @@ afternoon.
 Status: phases 0 to 6 are done. `baka` with no arguments is the whole product: search,
 downloads, seeding and settings in one terminal interface, across every source torlink
 has, and the same binary runs headless on a box with no terminal at all. Pushing a `v`
-tag builds it for both Windows architectures and publishes it. Phase 7, 1.0, is next.
+tag builds it for both Windows architectures and for Linux, and publishes it to
+crates.io, Scoop, the AUR and the container registry. Phase 7, 1.0, is next.
 
 ## Decisions already made
 
@@ -19,7 +20,7 @@ tag builds it for both Windows architectures and publishes it. Phase 7, 1.0, is 
 | Interface | TUI first, CLI subcommands alongside | Matches torlink's shape and keeps headless and scripted use possible. |
 | Settings | One Settings page, one TOML file, no environment variables | Every knob is in one place you can find without reading docs. |
 | Sources | Same curated list as torlink | Parity out of the box, no setup for the user. |
-| Platforms for 1.0 | Windows via winget, Scoop and Chocolatey, plus `cargo install b-baka` everywhere | Windows is the primary target. `cargo install` covers Linux and macOS for free. |
+| Platforms for 1.0 | Windows via Scoop, Arch via the AUR, a container image for the headless modes, plus `cargo install` and `cargo binstall` everywhere | Windows is the primary target. `cargo install` covers Linux and macOS for free, and `cargo binstall` makes that instant where a release archive exists. |
 | Layout | One crate, several modules | Five crates for a tool this size is overhead, not structure. Split only when compile times justify it. |
 
 ## Settings model
@@ -272,55 +273,69 @@ what makes a second one useful rather than a conflict.
 
 Target was installing in one command. What shipped:
 
-- `.github/workflows/release.yml` on a `v*` tag. It builds `x86_64-pc-windows-msvc` and
-  `aarch64-pc-windows-msvc`, zips each with the README and the licence, and attaches both
-  archives and `SHA256SUMS.txt` to a GitHub release.
+- `.gitlab-ci.yml` on a `v*` tag. It builds `x86_64-pc-windows-msvc` and
+  `aarch64-pc-windows-msvc` on a Windows runner and `x86_64-unknown-linux-gnu` in a
+  container, packs each with the README and the licence, and attaches all three plus
+  `SHA256SUMS.txt` to a GitLab release. `.github/workflows/release.yml` still does the
+  Windows half of that for anyone building this on GitHub.
 - The tag is compared against the version in `Cargo.toml` before anything is built. A
   mismatch is the one release mistake that cannot be taken back, because crates.io does
   not let a version be republished.
-- winget manifests in `packaging/winget/`, submitted to `microsoft/winget-pkgs` by
-  `wingetcreate` on the same tag. `InstallerType: zip` with a nested portable, so winget
-  puts `baka` on `PATH` itself.
 - The Scoop bucket is this repository. The release job writes `bucket/baka.json` on
   `main`, and `scoop bucket add baka https://gitlab.ramon.moe/4G0NYY/BAKA` is what points Scoop
   at it.
 - `cargo publish` on the same tag, which is what `cargo install b-baka` reads.
-- `scripts/manifests.sh` fills the version and the two checksums into both manifest sets
-  and refuses to write a file with a placeholder left in it. CI renders them on every
-  pull request, so a template that no longer matches its script fails then rather than
-  during a release.
-- Every route installs the executable and nothing else. Unzipping a built archive and
+- `[package.metadata.binstall]` in `Cargo.toml`, so `cargo binstall b-baka` takes the
+  release archive for the target it is running on and falls back to compiling when there
+  is none.
+- `packaging/aur/PKGBUILD`, pushed to `aur.archlinux.org/b-baka.git` with a generated
+  `.SRCINFO`. It builds from the crates.io tarball rather than a binary, so one PKGBUILD
+  covers x86_64 and aarch64 and nothing has to be rebuilt when a release adds a target.
+- A `Dockerfile` at the root and a `container` job that pushes the version and `latest`
+  to the project registry. It carries the binary and a root store, and its default
+  command is `serve`, because a container is where the headless modes belong.
+- `scripts/manifests.sh` fills the version and the checksums into the Scoop manifest and
+  the PKGBUILD and refuses to write a file with a placeholder left in it. CI renders them
+  on every merge request, so a template that no longer matches its script fails then
+  rather than during a release.
+- Every route installs the executable and nothing else. Unpacking a built archive and
   asking the binary where its settings are answers `%APPDATA%\baka\config.toml`, which
-  is not a path any of the four uninstalls can reach.
+  is not a path any of the uninstalls can reach.
 - `CONTRIBUTING.md` has the checks to run, the three steps before a tag, what each job in
   the release does, and which secret each one needs.
 
-Four things found while building:
+Six things found while building:
 
 - This phase was written as archives plus an installer. A portable executable does not
-  need one. winget's zip and nested portable gives `PATH` integration and an uninstall
-  that removes what it extracted, and an MSI would have added a toolchain to CI and a
-  second uninstall path aimed at the only thing worth protecting.
+  need one. An MSI would have added a toolchain to CI and a second uninstall path aimed
+  at the only thing worth protecting.
 - A Scoop bucket does not need a repository of its own. Any repository with a `bucket`
   directory is one, so it lives here: one release job, and no second repository to keep
   in step with this one.
 - aarch64 compiles the whole tree, `aws-lc-sys` included, and then needs the ARM64 MSVC
   linker to finish. Without it `rustc` falls back to whatever `link.exe` is on `PATH`,
   which on a machine with Git for Windows is coreutils, and the error it prints has
-  nothing to do with the code. The runner image carries the ARM64 tools, so that leg is
-  exercised in CI rather than locally.
+  nothing to do with the code.
 - A missing secret skips its job instead of failing the release. A release that cannot
-  reach crates.io should still put archives on GitHub.
+  reach crates.io should still put archives on the release page.
+- A GitLab release carries links, not files, and a link is only reachable at
+  `/-/releases/<tag>/downloads/<name>` if it was attached with a `filepath`. Without one
+  the release page looks finished and every install route that reads that permalink is
+  broken, which is the worst shape a release bug can take.
+- A Windows container image is not a Windows build machine. `servercore` ships neither
+  rustup nor the MSVC toolchain, and installing them per job costs more than the build,
+  so the Windows jobs run on a shell runner with the toolchain on the machine.
 
-Left open, as planned: Chocolatey, which waits for the winget package to be live, and the
-first winget submission itself, which a person at Microsoft reviews.
+Left open: winget, which submits by opening a pull request against a GitHub repository
+and therefore left with GitHub, and Chocolatey, which was waiting on winget and now has
+nothing to wait for. Its manifests were removed rather than kept as a template nothing
+renders.
 
 ## Phase 7: 1.0
 
 Target: it stays out of the way.
 
 - `baka attach`: connect a TUI to a running daemon and survive an SSH drop.
-- Chocolatey package, once the winget one is live.
 - Config migration: a file written by an older version loads without losing settings.
 - Search result caching so a repeated query is instant.
 - Polish pass: startup time, memory under load, terminal resize, narrow terminals.

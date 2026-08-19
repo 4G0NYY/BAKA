@@ -1,13 +1,7 @@
-# GitLab CI/CD, translated from .github/workflows/ci.yml and release.yml.
-# The GitHub workflows are left in place, so the project still builds on GitHub.
-#
-# Runners on this instance:
-#   docker         containerised jobs on moe-gitlab01 (docker + dind).
-#   crimsonrunner  base-OS shell runner on server10 (host Docker, SSH to the swarm).
-#   windows        does not exist yet. The jobs that genuinely need a native Windows
-#                  toolchain are kept here, tagged `windows` and `when: manual`, so a
-#                  pipeline never waits on a runner that cannot appear. Register a
-#                  runner with that tag and they start working as written.
+# GitLab CI/CD. This is where releases come from. The workflows in .github/ are kept for
+# anyone building the project on GitHub, but nothing here depends on them and the winget
+# job that used to live there is gone: it opened a pull request against a GitHub
+# repository, which this project no longer has.
 
 stages:
   - check
@@ -59,10 +53,12 @@ check:
     # A block scalar, because these lines contain ": " and YAML would otherwise
     # read them as mapping keys.
     - |
-      bash scripts/manifests.sh 9.9.9 abc123 def456 rendered
+      bash scripts/manifests.sh 9.9.9 abc123 def456 fee789 rendered
       python3 -m json.tool rendered/baka.json > /dev/null
-      grep -q "PackageVersion: 9.9.9" rendered/winget/4G0NYY.BAKA.installer.yaml
       grep -q '"version": "9.9.9"' rendered/baka.json
+      grep -q '^pkgver=9.9.9$' rendered/aur/PKGBUILD
+      # A PKGBUILD is a bash script, and makepkg is not here to say so.
+      bash -n rendered/aur/PKGBUILD
 
 test:linux:
   extends: .ci_rules
@@ -71,14 +67,11 @@ test:linux:
   script:
     - cargo test
 
-# The other half of the GitHub `test` matrix (windows-latest). Parked: see the
-# runner note at the top of this file.
+# The other half of the GitHub `test` matrix (windows-latest).
 test:windows:
   extends: .ci_rules
   stage: test
   tags: [windows]
-  when: manual
-  allow_failure: true
   cache: []
   script:
     - cargo test
@@ -91,7 +84,7 @@ msrv:
     - cargo check
 
 # ----------------------------------------------------------- release.yml ----
-# Tag-driven, exactly as on GitHub: `git push origin vX.Y.Z`.
+# Tag-driven: `git push origin vX.Y.Z`.
 .release_rules:
   rules:
     - if: $CI_COMMIT_TAG =~ /^v/
@@ -115,32 +108,50 @@ version:
       # Downstream jobs read this as $NUMBER, the way they read the job output on GitHub.
       dotenv: version.env
 
-# Native Windows builds. Parked (see the runner note at the top). `allow_failure`
-# stays false so the release below waits for real binaries instead of publishing
-# an empty release the moment a tag is pushed.
+# Native Windows builds on the shell runner, so the variables are read as $env:NAME.
 build:windows:
   extends: .release_rules
   stage: build
   tags: [windows]
-  when: manual
-  allow_failure: false
   needs: [version]
   cache: []
   parallel:
     matrix:
       - TARGET: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
-  # Written for a PowerShell-shell Windows runner (the gitlab-runner default on
-  # Windows), which is why the variables are read as $env:NAME rather than $NAME.
   script:
     - rustup target add $env:TARGET
     - cargo build --release --locked --target $env:TARGET
     - $name = "baka-$env:NUMBER-$env:TARGET"
     - New-Item -ItemType Directory $name | Out-Null
     - Copy-Item "target/$env:TARGET/release/baka.exe", README.md, LICENSE $name
-    - Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+    # Flat at the archive root, which is what the binstall bin-dir in Cargo.toml expects.
+    - Compress-Archive -Path "$name/*" -DestinationPath "$name.zip" -Force
   artifacts:
     paths:
       - baka-*.zip
+
+# Linux is what makes `cargo binstall` mean anything off Windows, and it is the same
+# archive shape so one bin-dir covers both. Built against the glibc in rust:latest, so
+# a distro older than that still wants `cargo install` or the AUR package.
+build:linux:
+  extends: .release_rules
+  stage: build
+  image: rust:latest
+  needs: [version]
+  cache: []
+  script:
+    - |
+      set -eu
+      target=x86_64-unknown-linux-gnu
+      rustup target add "$target"
+      cargo build --release --locked --target "$target"
+      name="baka-$NUMBER-$target"
+      mkdir "$name"
+      cp "target/$target/release/baka" README.md LICENSE "$name/"
+      tar -czf "$name.tar.gz" -C "$name" baka README.md LICENSE
+  artifacts:
+    paths:
+      - baka-*.tar.gz
 
 release:
   extends: .release_rules
@@ -149,15 +160,18 @@ release:
   needs:
     - version
     - build:windows
+    - build:linux
   cache: []
   script:
     - |
       set -eu
-      mkdir -p archives && mv baka-*.zip archives/
+      mkdir -p archives && mv baka-*.zip baka-*.tar.gz archives/
       cd archives
-      sha256sum *.zip | tee SHA256SUMS.txt
-      echo "X64=$(awk '/x86_64/ { print $1 }' SHA256SUMS.txt)"    >> ../sums.env
-      echo "ARM64=$(awk '/aarch64/ { print $1 }' SHA256SUMS.txt)" >> ../sums.env
+      sha256sum * | tee SHA256SUMS.txt
+      # Matched on the full target triple: plain x86_64 now also matches the Linux
+      # tarball, and Scoop would be handed the wrong checksum.
+      echo "X64=$(awk '/x86_64-pc-windows-msvc/ { print $1 }' SHA256SUMS.txt)"    >> ../sums.env
+      echo "ARM64=$(awk '/aarch64-pc-windows-msvc/ { print $1 }' SHA256SUMS.txt)" >> ../sums.env
       # GitLab releases carry links, not blobs, so the archives go to the project's
       # generic package registry first and the release points at them there.
       for f in *; do
@@ -174,13 +188,23 @@ release:
     # `--generate-notes` has no GitLab equivalent; the tag message is used instead.
     description: $CI_COMMIT_TAG
     assets:
+      # `filepath` is what puts an asset under /-/releases/<tag>/downloads/<name>. Without
+      # it the only address an asset has is the package registry API URL, and every
+      # install route here (Scoop, binstall, anyone reading the README) is written
+      # against the permalink.
       links:
         - name: baka-$NUMBER-x86_64-pc-windows-msvc.zip
           url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/baka-$NUMBER-x86_64-pc-windows-msvc.zip
+          filepath: /baka-$NUMBER-x86_64-pc-windows-msvc.zip
         - name: baka-$NUMBER-aarch64-pc-windows-msvc.zip
           url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/baka-$NUMBER-aarch64-pc-windows-msvc.zip
+          filepath: /baka-$NUMBER-aarch64-pc-windows-msvc.zip
+        - name: baka-$NUMBER-x86_64-unknown-linux-gnu.tar.gz
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/baka-$NUMBER-x86_64-unknown-linux-gnu.tar.gz
+          filepath: /baka-$NUMBER-x86_64-unknown-linux-gnu.tar.gz
         - name: SHA256SUMS.txt
           url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/baka/$CI_COMMIT_TAG/SHA256SUMS.txt
+          filepath: /SHA256SUMS.txt
 
 # crates.io needs no Windows runner, so unlike the rest of the release chain this
 # one runs by itself on a tag. Self-skips when CARGO_REGISTRY_TOKEN is unset,
@@ -217,8 +241,14 @@ scoop:
         exit 0
       fi
       apk add --no-cache git bash
-      bash scripts/manifests.sh "$NUMBER" "$X64" "$ARM64" rendered
+      # SKIP for the crate checksum: nothing here reads the PKGBUILD this also renders.
+      bash scripts/manifests.sh "$NUMBER" "$X64" "$ARM64" SKIP rendered
       echo "Point the bucket at the new release"
+      # A tag pipeline checks out the tag in detached HEAD. The bucket belongs on the
+      # default branch, and committing on top of the tag pushes fine only while the tag
+      # is still that branch's tip, which is a release that fails for no visible reason.
+      git fetch --depth 1 origin "$CI_DEFAULT_BRANCH"
+      git checkout -B "$CI_DEFAULT_BRANCH" FETCH_HEAD
       mkdir -p bucket
       mv rendered/baka.json bucket/baka.json
       git config user.name "gitlab-ci"
@@ -227,10 +257,94 @@ scoop:
       git diff --cached --quiet || git commit -m "Scoop manifest for $CI_COMMIT_TAG"
       git push "https://oauth2:${BAKA_BUCKET_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_DEFAULT_BRANCH}"
 
-# The winget job has no GitLab equivalent and is deliberately not translated: it
-# opens a pull request against microsoft/winget-pkgs on GitHub, so it needs GitHub
-# regardless of where this repository is hosted. Keep publishing winget releases
-# from .github/workflows/release.yml, or run wingetcreate by hand:
+# The AUR package builds from the crates.io tarball rather than from a binary, so it
+# needs `crates` to have run and the file to have reached the CDN. Set AUR_SSH_KEY to a
+# private key whose public half is on an AUR account that co-maintains b-baka. Unset =
+# skipped. The first push has to be to an already reserved package name; AUR creates the
+# repository on submission, it does not create the name.
+aur:
+  extends: .release_rules
+  stage: publish
+  image: archlinux:base-devel
+  needs:
+    - version
+    - crates
+  cache: []
+  script:
+    - |
+      set -eu
+      if [ -z "${AUR_SSH_KEY:-}" ]; then
+        echo "AUR_SSH_KEY is not set, skipping the AUR update."
+        exit 0
+      fi
+      pacman -Syu --noconfirm --needed git openssh
+
+      echo "Wait for b-baka $NUMBER on the crates.io CDN"
+      url="https://static.crates.io/crates/b-baka/b-baka-$NUMBER.crate"
+      for _ in $(seq 30); do
+        if curl --fail --silent --location --output crate.tar.gz "$url"; then break; fi
+        sleep 10
+      done
+      if ! test -s crate.tar.gz; then
+        echo "b-baka $NUMBER never reached the crates.io CDN" >&2
+        exit 1
+      fi
+      sum=$(sha256sum crate.tar.gz | cut -d' ' -f1)
+
+      # SKIP twice: the PKGBUILD carries no archive checksums, so this job has no reason
+      # to wait on the release stage for them.
+      bash scripts/manifests.sh "$NUMBER" SKIP SKIP "$sum" rendered
+
+      echo "Generate .SRCINFO, which makepkg refuses to do as root"
+      useradd --create-home builder
+      install -d -o builder -g builder /tmp/aur
+      install -o builder -g builder rendered/aur/PKGBUILD /tmp/aur/PKGBUILD
+      su builder -c 'cd /tmp/aur && makepkg --printsrcinfo > .SRCINFO'
+
+      # AUR_SSH_KEY is a File variable, so this is a path. GitLab cannot mask a multi
+      # line variable, and a private key pasted into a normal one is a key in plain text
+      # in every job log that ever echoes it.
+      install -d -m 0700 "$HOME/.ssh"
+      install -m 0600 "$AUR_SSH_KEY" "$HOME/.ssh/aur"
+      ssh-keyscan aur.archlinux.org >> "$HOME/.ssh/known_hosts" 2>/dev/null
+      export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes"
+
+      git clone ssh://aur@aur.archlinux.org/b-baka.git /tmp/pkg
+      cp /tmp/aur/PKGBUILD /tmp/aur/.SRCINFO /tmp/pkg/
+      cd /tmp/pkg
+      git config user.name "gitlab-ci"
+      git config user.email "gitlab-ci@$CI_SERVER_HOST"
+      git add PKGBUILD .SRCINFO
+      git diff --cached --quiet || git commit -m "b-baka $NUMBER"
+      git push origin HEAD:master
+
+# The image is built from the Dockerfile at the root, so `docker build .` on a clean
+# checkout produces the same thing. Both tags are pushed: the version for anyone pinning,
+# and latest for anyone not. Pushing needs no secret, the job token is the credential.
 #
-#   bash scripts/manifests.sh <version> <x64-sha256> <arm64-sha256> rendered
-#   wingetcreate submit rendered/winget --token <github-token>
+# This uses dind on the `docker` runner. If that runner is ever unprivileged, move the
+# job to `tags: [crimsonrunner]` and drop the services and DOCKER_* variables: that
+# runner has a host daemon already.
+container:
+  extends: .release_rules
+  stage: publish
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  needs: [version]
+  cache: []
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
+  script:
+    - |
+      set -eu
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
+      docker build \
+        --tag "$CI_REGISTRY_IMAGE:$NUMBER" \
+        --tag "$CI_REGISTRY_IMAGE:latest" \
+        .
+      docker push "$CI_REGISTRY_IMAGE:$NUMBER"
+      docker push "$CI_REGISTRY_IMAGE:latest"

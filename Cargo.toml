@@ -1,6 +1,6 @@
 [package]
 name = "b-baka"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.88"
 description = "BitTorrent Acquisition & Keyword Aggregator, a terminal torrent search and download tool"
@@ -12,12 +12,16 @@ categories = ["command-line-utilities"]
 # stuff/ holds the banner that render.rs includes at compile time, so it is not repo-only
 # material and must never join this list.
 exclude = [
+    ".dockerignore",
     ".gitattributes",
     ".github/",
     ".gitignore",
+    ".gitlab-ci.yml",
     "CLAUDE.md",
     "CONTRIBUTING.md",
+    "Dockerfile",
     "ROADMAP.md",
+    "bucket/",
     "packaging/",
     "scripts/",
 ]
@@ -26,6 +30,25 @@ exclude = [
 [[bin]]
 name = "baka"
 path = "src/main.rs"
+
+# cargo-binstall reads this off crates.io and fetches a release archive instead of
+# compiling. The archive name says "baka" rather than "{name}" because the archives are
+# named after the binary, not after the stuttering package.
+#
+# Every URL and format is written out per target rather than assembled from
+# "{archive-suffix}", so what binstall asks for is exactly what the release job wrote.
+[package.metadata.binstall]
+pkg-url = "{repo}/-/releases/v{version}/downloads/baka-{version}-{target}.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "{bin}{binary-ext}"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{repo}/-/releases/v{version}/downloads/baka-{version}-{target}.zip"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{repo}/-/releases/v{version}/downloads/baka-{version}-{target}.zip"
+pkg-fmt = "zip"
 
 [dependencies]
 anyhow = "1.0.104"
@@ -42,8 +65,8 @@ thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "signal", "net", "io-util", "fs"] }
 toml = "1.1.4"
 
-# Phase 6 ships this binary through winget and Scoop, where download size is the
-# first thing a user notices.
+# Phase 6 ships this binary through Scoop, cargo-binstall and a container image, where
+# download size is the first thing a user notices.
 [profile.release]
 lto = true
 codegen-units = 1

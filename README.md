@@ -27,31 +27,61 @@ environment variables to discover, no flags to memorise.
 
 ## Install
 
-```powershell
-winget install BAKA
-```
+Windows, x64 and arm64:
 
 ```powershell
 scoop bucket add baka https://gitlab.ramon.moe/4G0NYY/BAKA
 scoop install baka
 ```
 
+Anywhere, without compiling, if you already have
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
+
+```
+cargo binstall b-baka
+```
+
+Anywhere, from source:
+
 ```
 cargo install b-baka
 ```
 
-winget and Scoop cover Windows, on x64 and on arm64. `cargo install` works anywhere Rust
-does, including Linux and macOS. The crates.io name stutters because `baka` was already
-taken there, but the command it installs is still `baka`.
+Arch Linux, from the AUR:
+
+```
+paru -S b-baka
+```
+
+The crates.io name stutters because `baka` was already taken there, but the command every
+one of these installs is still `baka`.
+
+`cargo binstall` takes the release archive when there is one for your target, which today
+means Windows on x64 and arm64 and Linux on x64, and falls back to compiling when there
+is not. The Linux archive is built against a current glibc, so on an older distribution
+use `cargo install` or the AUR package instead.
+
+For the headless modes there is a container image:
+
+```
+docker run --rm -v "$PWD/config:/home/baka/.config/baka" \
+                -v "$PWD/downloads:/home/baka/downloads" \
+                -p 4241:4241 -p 4242:4242 \
+                registry.ramon.moe/4g0nyy/baka:latest serve
+```
+
+The bind address defaults to loopback, which inside a container means nothing outside it
+can reach the intake. Set `bind` to `0.0.0.0` in the mounted `config.toml`, and mean it:
+the magnet intake downloads whatever it is handed.
 
 Every release also carries the archives on their own, with a `SHA256SUMS.txt` next to
-them, if you would rather unzip the binary and put it somewhere yourself:
+them, if you would rather unpack the binary and put it somewhere yourself:
 
 ```powershell
 (Get-FileHash baka-0.1.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash
 ```
 
-All four routes install a portable executable and nothing else. Uninstalling removes the
+Every route installs a portable executable and nothing else. Uninstalling removes the
 binary and leaves `config.toml` and your downloads alone, so reinstalling finds the
 settings you already had.
 

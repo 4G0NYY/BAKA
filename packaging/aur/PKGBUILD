@@ -1,0 +1,44 @@
+# Maintainer: Raymond Dev <ramon@schmocker.fun>
+# Rendered by scripts/manifests.sh. Edit this template, never the rendered copy.
+pkgname=b-baka
+pkgver={{VERSION}}
+pkgrel=1
+pkgdesc="BitTorrent Acquisition & Keyword Aggregator, a terminal torrent search and download tool"
+arch=('x86_64' 'aarch64')
+url="https://gitlab.ramon.moe/4G0NYY/BAKA"
+license=('MIT')
+depends=('gcc-libs' 'glibc')
+makedepends=('cargo')
+provides=('baka')
+conflicts=('baka')
+# Cargo.toml sets lto in the release profile, and makepkg passing its own LTO flags on
+# top of that breaks the link. This is the standard opt out for Rust packages.
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::https://static.crates.io/crates/$pkgname/$pkgname-$pkgver.crate")
+sha256sums=('{{SHA256_CRATE}}')
+
+prepare() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo test --frozen --release
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    install -Dm0755 target/release/baka "$pkgdir/usr/bin/baka"
+    install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm0644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
