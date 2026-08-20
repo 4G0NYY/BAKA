@@ -11,9 +11,10 @@ BitTorrent Acquisition & Keyword Aggregator
 Search torrents and download them without leaving your terminal. One Rust binary, no
 runtime, no setup.
 
-> **Status: pre-alpha.** The interface, the downloads, the settings page and every
-> source below all work, and pushing a tag builds and publishes a release. The install
-> commands below work from the first tagged release onwards. The plan is in
+> **Status: pre-alpha.** Everything below works: the interface, the downloads, the
+> settings page, every source, the headless modes and attaching to one of them. Pushing
+> a tag builds and publishes a release, and the install commands below work from the
+> first tagged release onwards. The plan, and what each phase actually shipped, is in
 > [ROADMAP.md](ROADMAP.md).
 
 ## Why
@@ -130,7 +131,7 @@ environment variables and no persistent flags to hunt for.
 | Downloads | Download folder, maximum concurrent downloads, download rate limit, whether to ask for a folder every time |
 | Seeding | Seed after completion, maximum concurrent seeds, upload rate limit, stop at ratio |
 | Network | Listen port, DHT, UPnP port mapping, peer limit per torrent |
-| Search | Which sources are enabled, per source timeout, result limit, minimum seeders |
+| Search | Which sources are enabled, per source timeout, result limit, minimum seeders, how long results are remembered |
 | Server | Bind address, magnet intake port, file serving port, watch folder |
 | Interface | Accent colour, confirm before removing, game source warnings |
 
@@ -149,6 +150,12 @@ Behind the page is a single file:
 Edit it by hand if you prefer. `baka settings` opens the page without the rest of the TUI,
 and `baka settings --path` prints the location. Deleting the file resets everything to
 defaults, and a partial file is fine because missing values fall back.
+
+A value BAKA cannot read costs that one setting and nothing else. It goes back to its
+default, BAKA names it once on the status line, and the next save writes the file back
+clean. That is what makes a file written by an older version, or a typo in a hand
+edit, cost one line rather than the lot. A file that is not TOML at all is refused with
+the reason, because quietly starting over is worse than saying so.
 
 Command line flags override settings for a single run and never write to the file.
 
@@ -173,6 +180,7 @@ Deleting that folder costs you the progress on anything still downloading, and n
 | `baka watch [dir]` | Download anything dropped into a directory |
 | `baka serve` | Accept magnets over HTTP |
 | `baka files` | Serve finished downloads over HTTP |
+| `baka attach [address]` | Open the interface on a BAKA that is already running |
 
 Add `--daemon` to `watch`, `serve` or `files` to keep running after you close the
 terminal or log out. `baka --help` lists everything.
@@ -189,16 +197,48 @@ curl -d "magnet:?xt=urn:btih:..." http://127.0.0.1:4241
 curl http://127.0.0.1:4241
 ```
 
+It answers a few more things, which is what `baka attach` drives it with:
+
+| Request | Does |
+| --- | --- |
+| `GET /torrents` | The same list as JSON |
+| `POST /torrents/<id>/pause` | Pause one |
+| `POST /torrents/<id>/resume` | Start it again |
+| `POST /torrents/<id>/remove` | Stop it, leaving the files on disk |
+
+A `Folder:` header on a `POST` says where that download should land, as a path on the
+machine running the session. Without one it uses that machine's download folder.
+
 `baka files` serves the download folder over HTTP, with directory listings and range
 requests, so a browser or a player can open a finished film without copying it first.
 
 Both listen on `127.0.0.1` by default, which is this machine only. The Settings page has
 the bind address and both ports if you want them reachable from elsewhere. Think before
-you widen the magnet intake: it downloads whatever it is handed.
+you widen the magnet intake: it downloads whatever it is handed, into whatever folder it
+is told, and it asks nobody for a password.
 
-Run one BAKA at a time. The interface, `baka get` and the headless modes all open the
-same session, and two of them at once fight over it. Attaching a second interface to a
-running one is what `baka attach` will be for.
+Run one session at a time. The interface, `baka get` and the headless modes all open the
+same session, and two of them at once fight over it. That is what `baka attach` is for:
+
+```
+baka serve --daemon
+baka attach
+```
+
+The second command opens the usual interface on the session the first one started.
+Downloads, seeding, pausing, stopping and starting new ones all work the way they do
+locally. Quitting the attached interface leaves the session running, and so does losing
+the connection it was attached over, which is what makes it safe over SSH.
+
+With no address it uses the bind address and the magnet intake port from the Settings
+page. Give it one to reach a BAKA somewhere else:
+
+```
+baka attach nas.lan:4241
+```
+
+The Settings page is still this machine's settings while attached, and it says so. The
+session elsewhere reads its own.
 
 ## Sources
 
@@ -225,7 +265,10 @@ result came from so you can tell:
 ## How it works
 
 Search queries every enabled source at once, each on its own timeout, then merges and
-ranks by seeders and title match. A source that is down is skipped, not fatal.
+ranks by seeders and title match. A source that is down is skipped, not fatal. The same
+search asked again inside the same run is answered from what the sources already said,
+for as long as the Remember results setting says, and that answer is never written to
+disk.
 
 Downloads run through a queue that honours the concurrency limits and stop at ratio. A
 torrent past the limit reads as `queued` rather than silently doing nothing, and one you

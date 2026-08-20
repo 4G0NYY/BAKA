@@ -6,11 +6,12 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: phases 0 to 6 are done. `baka` with no arguments is the whole product: search,
+Status: phases 0 to 7 are done. `baka` with no arguments is the whole product: search,
 downloads, seeding and settings in one terminal interface, across every source torlink
-has, and the same binary runs headless on a box with no terminal at all. Pushing a `v`
-tag builds it for both Windows architectures and for Linux, and publishes it to
-crates.io, Scoop, the AUR and the container registry. Phase 7, 1.0, is next.
+has, and the same binary runs headless on a box with no terminal at all. `baka attach`
+opens that interface on a session already running somewhere else. Pushing a `v` tag
+builds it for both Windows architectures and for Linux, and publishes it to crates.io,
+Scoop, the AUR and the container registry. Everything on the parity checklist is done.
 
 ## Decisions already made
 
@@ -267,7 +268,7 @@ Three things found while building:
 
 Left as it is: one BAKA at a time. The interface, `baka get` and the headless modes all
 open the same session, which has been true since phase 2. `baka attach` in phase 7 is
-what makes a second one useful rather than a conflict.
+what made a second one useful rather than a conflict.
 
 ## Phase 6: packaging (done)
 
@@ -331,14 +332,48 @@ and therefore left with GitHub, and Chocolatey, which was waiting on winget and 
 nothing to wait for. Its manifests were removed rather than kept as a template nothing
 renders.
 
-## Phase 7: 1.0
+## Phase 7: 1.0 (done)
 
-Target: it stays out of the way.
+Target was that it stays out of the way. What shipped:
 
-- `baka attach`: connect a TUI to a running daemon and survive an SSH drop.
-- Config migration: a file written by an older version loads without losing settings.
-- Search result caching so a repeated query is instant.
-- Polish pass: startup time, memory under load, terminal resize, narrow terminals.
+- `baka attach [address]` opens the interface on a session that is already running. It
+  drives that session over the HTTP the magnet intake already answered on: `GET
+  /torrents` for what is running, and `POST /torrents/<id>/pause`, `/resume` and
+  `/remove` behind the keys the Downloads and Seeding tabs already bind. With no address
+  it uses the bind address and intake port from the Settings page.
+- Quitting an attached interface leaves the session running, and an SSH drop takes the
+  interface rather than the downloads. That is the whole reason to attach to one.
+- `Session` is either an engine this process started or a daemon somewhere else, and the
+  interface asks both for the same things. The queue and the shutdown are the two it
+  does not ask of a daemon: that session runs its own queue against its own settings,
+  and stopping it on the way out would be the opposite of attaching to it.
+- A settings file holding a value this version cannot read loses that value and keeps
+  every other one, and the status line names what went back to its default. The next
+  save writes the file back clean, so the complaint is heard once.
+- A repeated search is answered from what the sources already said, for as long as the
+  Remember results setting says. Sixteen searches are kept and the oldest goes first.
+- The interface is drawn before the session starts rather than after it, so a slow
+  start is a status line rather than a blank terminal.
+- Tables drop their middle columns below sixty cells wide instead of cutting every
+  column in half, and the tally at the bottom right gives its room to the hint.
+
+Five things found while building:
+
+- `baka settings` opened with the search box focused, invisibly, because that page has
+  no search box on it. `q` did nothing and `Enter` started a browse. The page starts on
+  a row now.
+- A daemon that is not there is worth saying at the prompt rather than as a line inside
+  an interface that has nothing to show and nothing to drive. `baka attach` asks once
+  before it opens. After that, a session that goes quiet for a second is a notice and
+  the next tick asks again.
+- Both halves of the attach protocol live in `server.rs`, so the paths one end writes
+  are the paths the other end reads, and one test walks an order through both.
+- The search is remembered in memory and nowhere else. A cache on disk would be a
+  record of what was searched for, which is not a file BAKA should write without being
+  asked for it, and a repeated search inside one run is the case worth having.
+- A key is kept from an unreadable settings file only if the settings still parse with
+  it, so what salvage returns always loads. That is one rule rather than a list of
+  renames to maintain, and it covers a file edited by hand as well as an older one.
 
 ## Non-goals
 

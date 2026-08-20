@@ -16,6 +16,7 @@ use librqbit::{
     AddTorrent, AddTorrentOptions, DhtSessionConfig, ListenerOptions, ManagedTorrent, Session,
     SessionOptions, SessionPersistenceConfig, TorrentStatsState,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::{self, Settings};
@@ -67,7 +68,8 @@ fn info_hash(raw: &str) -> Option<String> {
     None
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum State {
     Checking,
     Active,
@@ -97,8 +99,9 @@ enum Wish {
 }
 
 /// One poll of one torrent. Callers ask for these on a timer rather than subscribing,
-/// so nothing above the engine has to keep a channel alive.
-#[derive(Debug, Clone)]
+/// so nothing above the engine has to keep a channel alive. It is also what a daemon
+/// hands an attached interface, which is why it can be written out and read back.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Progress {
     pub id: DownloadId,
     pub name: Option<String>,

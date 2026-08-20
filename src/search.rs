@@ -13,7 +13,8 @@ mod yts;
 use std::cmp::Reverse;
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
-use std::time::Duration;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
 use reqwest::Client;
@@ -35,6 +36,10 @@ const TRACKERS: &[&str] = &[
 /// A listing that carries no magnet link costs one more request per result, so only
 /// the best seeded handful are followed.
 const PAGES: usize = 10;
+
+/// How many searches are worth keeping. A remembered search is one merged answer, so
+/// this is a few screens of results rather than anything that needs managing.
+const MOST_REMEMBERED: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Category {
@@ -95,10 +100,34 @@ pub struct Outcome {
     pub failures: Vec<Failure>,
 }
 
+#[derive(Clone)]
 pub struct Failure {
     pub source: &'static str,
     pub reason: String,
 }
+
+/// What the sources answered. The settings that decide how much of it is shown are
+/// applied after, so a remembered answer follows the settings as they are now.
+#[derive(Clone)]
+struct Answer {
+    torrents: Vec<Torrent>,
+    failures: Vec<Failure>,
+}
+
+/// The same question asked twice is the same question only if the same sources are
+/// being asked it.
+#[derive(PartialEq)]
+struct Question {
+    words: String,
+    only: Option<Category>,
+    sources: Vec<&'static str>,
+}
+
+type Searches = Mutex<Vec<(Question, Instant, Answer)>>;
+
+/// Asking eight sites the same thing again because the user pressed Enter twice is
+/// eight requests nobody wanted.
+static REMEMBERED: LazyLock<Searches> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 pub trait Indexer: Send + Sync {
     fn name(&self) -> &'static str;
@@ -133,16 +162,50 @@ pub async fn run(
     query: &str,
     only: Option<Category>,
 ) -> Result<Outcome> {
+    let query = query.trim();
+    let asked: Vec<(&'static dyn Indexer, Ask)> = asks(query, only)
+        .into_iter()
+        .filter(|(indexer, _)| settings.sources.enabled(indexer.name()))
+        .collect();
+    let question = Question {
+        words: query.to_lowercase(),
+        only,
+        sources: asked.iter().map(|(indexer, _)| indexer.name()).collect(),
+    };
+    let life = Duration::from_secs(u64::from(settings.remember_minutes) * 60);
+
+    let answer = match remembered(&REMEMBERED, &question, life) {
+        Some(answer) => answer,
+        None => {
+            let answer = everyone(settings, &asked).await?;
+            remember(&REMEMBERED, question, &answer, life);
+            answer
+        }
+    };
+
+    let torrents = keep(answer.torrents, settings, only);
+    Ok(Outcome {
+        torrents: match query.is_empty() {
+            true => library(torrents, settings),
+            false => rank(query, torrents, settings),
+        },
+        failures: answer.failures,
+    })
+}
+
+/// Every source at once, each under its own timeout, because the slowest of them is
+/// not worth waiting for.
+async fn everyone(
+    settings: &config::Search,
+    asked: &[(&'static dyn Indexer, Ask)],
+) -> Result<Answer> {
     let client = Client::builder().user_agent(USER_AGENT).build()?;
     let limit = Duration::from_secs(settings.timeout_secs.into());
-    let query = query.trim();
 
     let mut tasks = JoinSet::new();
-    for (indexer, ask) in asks(query, only) {
-        if !settings.sources.enabled(indexer.name()) {
-            continue;
-        }
+    for (indexer, ask) in asked {
         let client = client.clone();
+        let (indexer, ask) = (*indexer, ask.clone());
         tasks.spawn(async move {
             let name = indexer.name();
             let work = fetch(&client, indexer, &ask);
@@ -172,15 +235,34 @@ pub async fn run(
             }
         }
     }
+    Ok(Answer { torrents, failures })
+}
 
-    let torrents = keep(torrents, settings, only);
-    Ok(Outcome {
-        torrents: match query.is_empty() {
-            true => library(torrents, settings),
-            false => rank(query, torrents, settings),
-        },
-        failures,
-    })
+/// A lifetime of nothing is the setting for asking every time.
+fn remembered(searches: &Searches, question: &Question, life: Duration) -> Option<Answer> {
+    if life.is_zero() {
+        return None;
+    }
+    let mut store = searches.lock().ok()?;
+    store.retain(|(_, at, _)| at.elapsed() < life);
+    store
+        .iter()
+        .find(|(asked, _, _)| asked == question)
+        .map(|(_, _, answer)| answer.clone())
+}
+
+fn remember(searches: &Searches, question: Question, answer: &Answer, life: Duration) {
+    if life.is_zero() {
+        return;
+    }
+    let Ok(mut store) = searches.lock() else {
+        return;
+    };
+    store.retain(|(asked, _, _)| *asked != question);
+    store.push((question, Instant::now(), answer.clone()));
+    if store.len() > MOST_REMEMBERED {
+        store.remove(0);
+    }
 }
 
 /// Which source is asked what. A browse is per category, so a source that serves two
@@ -646,6 +728,93 @@ mod tests {
         for (_, ask) in asks("", Some(Category::Anime)) {
             assert_eq!(ask, Ask::Browse(Category::Anime));
         }
+    }
+
+    fn question(words: &str) -> Question {
+        Question {
+            words: words.to_string(),
+            only: None,
+            sources: vec!["test"],
+        }
+    }
+
+    fn answer(title: &str) -> Answer {
+        Answer {
+            torrents: vec![torrent(title, 1, "a")],
+            failures: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_repeated_search_is_answered_without_asking_anyone() {
+        let searches = Searches::default();
+        let life = Duration::from_secs(60);
+        remember(&searches, question("dune"), &answer("Dune Part Two"), life);
+        let found = remembered(&searches, &question("dune"), life).unwrap();
+        assert_eq!(found.torrents[0].title, "Dune Part Two");
+    }
+
+    #[test]
+    fn a_different_question_is_put_to_the_sources_afresh() {
+        let searches = Searches::default();
+        let life = Duration::from_secs(60);
+        remember(&searches, question("dune"), &answer("Dune Part Two"), life);
+        assert!(remembered(&searches, &question("arrival"), life).is_none());
+
+        // The same words asked of different sources is a different question.
+        let elsewhere = Question {
+            sources: vec!["somewhere else"],
+            ..question("dune")
+        };
+        assert!(remembered(&searches, &elsewhere, life).is_none());
+    }
+
+    #[test]
+    fn a_stale_answer_is_forgotten_rather_than_shown() {
+        let searches = Searches::default();
+        let life = Duration::from_millis(20);
+        remember(&searches, question("dune"), &answer("Dune Part Two"), life);
+        std::thread::sleep(Duration::from_millis(40));
+        assert!(remembered(&searches, &question("dune"), life).is_none());
+        assert!(searches.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn nothing_is_remembered_when_the_setting_says_never() {
+        let searches = Searches::default();
+        remember(&searches, question("dune"), &answer("Dune"), Duration::ZERO);
+        assert!(searches.lock().unwrap().is_empty());
+        assert!(remembered(&searches, &question("dune"), Duration::ZERO).is_none());
+    }
+
+    #[test]
+    fn only_the_last_handful_of_searches_are_kept() {
+        let searches = Searches::default();
+        let life = Duration::from_secs(60);
+        for n in 0..MOST_REMEMBERED + 5 {
+            remember(
+                &searches,
+                question(&format!("query {n}")),
+                &answer("x"),
+                life,
+            );
+        }
+        assert_eq!(searches.lock().unwrap().len(), MOST_REMEMBERED);
+        // The oldest are the ones that went.
+        assert!(remembered(&searches, &question("query 0"), life).is_none());
+        let last = format!("query {}", MOST_REMEMBERED + 4);
+        assert!(remembered(&searches, &question(&last), life).is_some());
+    }
+
+    #[test]
+    fn asking_the_same_thing_twice_keeps_one_answer_not_two() {
+        let searches = Searches::default();
+        let life = Duration::from_secs(60);
+        remember(&searches, question("dune"), &answer("First"), life);
+        remember(&searches, question("dune"), &answer("Second"), life);
+        assert_eq!(searches.lock().unwrap().len(), 1);
+        let found = remembered(&searches, &question("dune"), life).unwrap();
+        assert_eq!(found.torrents[0].title, "Second");
     }
 
     #[test]

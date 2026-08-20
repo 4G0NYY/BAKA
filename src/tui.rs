@@ -16,24 +16,44 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use crate::config::Settings;
 use crate::engine::{DownloadId, Engine, Input, Progress, State};
 use crate::search::{self, Category, Outcome, Torrent, magnet_link};
+use crate::server::Remote;
+use crate::session::Session;
 
 /// Long enough to be a deliberate double tap, short enough that an Esc from earlier in
 /// the session is not still counting.
 const DOUBLE_TAP: Duration = Duration::from_millis(600);
 
-/// The whole product.
-pub async fn run(settings: Settings) -> Result<()> {
-    let engine = Arc::new(Engine::start(&settings).await?);
-    let app = App::new(settings, Some(engine));
+/// The whole product. The session starts behind the first draw, so the interface is
+/// there to look at while the engine is still finding its feet.
+pub async fn run(settings: Settings, complaint: Option<String>) -> Result<()> {
+    let mut app = App::new(settings, None);
+    app.notice = complaint;
+    drive(app).await
+}
+
+/// The same interface, driving a session that is already running. Quitting this leaves
+/// that one alone, which is what makes it worth attaching to.
+pub async fn attach(settings: Settings, remote: Remote, complaint: Option<String>) -> Result<()> {
+    let at = remote.address().to_string();
+    let mut app = App::new(settings, Some(Arc::new(Session::Attached(remote))));
+    app.tab = Tab::Downloads;
+    app.typing = false;
+    app.notice = complaint.or(Some(format!(
+        "Attached to {at}. Quitting leaves it running."
+    )));
     drive(app).await
 }
 
 /// The Settings page on its own. It starts no session, so a server running BAKA
 /// elsewhere keeps its port and its downloads while this edits the same file.
-pub async fn settings_page(settings: Settings) -> Result<()> {
+pub async fn settings_page(settings: Settings, complaint: Option<String>) -> Result<()> {
     let mut app = App::new(settings, None);
     app.tab = Tab::Settings;
     app.settings_only = true;
+    // There is no search box on this page, so starting in it would swallow every key
+    // the page has, q included.
+    app.typing = false;
+    app.notice = complaint;
     // Written on the way out, so anyone who would rather use an editor has a file.
     app.unsaved = true;
     drive(app).await
@@ -115,6 +135,7 @@ enum Event {
     Key(KeyEvent),
     Redraw,
     Tick,
+    Started(Box<Result<Session>>),
     Searched(Box<Result<Outcome>>),
     Notice(String),
 }
@@ -132,7 +153,7 @@ struct Question {
 
 struct App {
     settings: Settings,
-    engine: Option<Arc<Engine>>,
+    session: Option<Arc<Session>>,
     events: Option<UnboundedSender<Event>>,
     clipboard: Option<arboard::Clipboard>,
     settings_only: bool,
@@ -154,10 +175,10 @@ struct App {
 }
 
 impl App {
-    fn new(settings: Settings, engine: Option<Arc<Engine>>) -> Self {
+    fn new(settings: Settings, session: Option<Arc<Session>>) -> Self {
         Self {
             settings,
-            engine,
+            session,
             events: None,
             clipboard: None,
             settings_only: false,
@@ -193,6 +214,17 @@ impl App {
         } else {
             Mode::Browsing
         }
+    }
+
+    /// No session yet and one on the way. The Settings page on its own never has one.
+    fn starting(&self) -> bool {
+        self.session.is_none() && !self.settings_only
+    }
+
+    fn attached(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.elsewhere().is_some())
     }
 
     fn downloads(&self) -> Vec<&Progress> {
@@ -234,12 +266,26 @@ async fn event_loop(terminal: &mut DefaultTerminal, mut app: App) -> Result<()> 
     let (tx, mut rx) = mpsc::unbounded_channel();
     app.events = Some(tx.clone());
 
+    // The interface is drawn first and the session starts behind it, so a slow start
+    // is a status line rather than a blank terminal.
+    if app.starting() {
+        let starting = tx.clone();
+        let settings = app.settings.clone();
+        tokio::spawn(async move {
+            let started = Engine::start(&settings).await.map(Session::Local);
+            let _ = starting.send(Event::Started(Box::new(started)));
+        });
+    }
+
     let keys = tx.clone();
     std::thread::spawn(move || {
         while let Ok(event) = event::read() {
             let sent = match event {
                 event::Event::Key(key) => keys.send(Event::Key(key)),
-                _ => keys.send(Event::Redraw),
+                // A resize is the only other event worth a redraw, and it is the one
+                // that decides which columns fit.
+                event::Event::Resize(_, _) => keys.send(Event::Redraw),
+                _ => Ok(()),
             };
             if sent.is_err() {
                 break;
@@ -268,6 +314,7 @@ async fn event_loop(terminal: &mut DefaultTerminal, mut app: App) -> Result<()> 
             }
             Event::Key(_) | Event::Redraw => {}
             Event::Tick => tick(&mut app).await,
+            Event::Started(started) => started_session(&mut app, *started),
             // Results that land after the user has already left are answering a
             // question nobody is asking any more.
             Event::Searched(outcome) if app.searching => finish_search(&mut app, *outcome),
@@ -281,10 +328,21 @@ async fn event_loop(terminal: &mut DefaultTerminal, mut app: App) -> Result<()> 
     }
 
     save(&mut app);
-    if let Some(engine) = &app.engine {
-        engine.shutdown().await;
+    if let Some(session) = &app.session {
+        session.shutdown().await;
     }
     Ok(())
+}
+
+fn started_session(app: &mut App, started: Result<Session>) {
+    match started {
+        Err(e) => app.say(format!("{e:#}")),
+        Ok(session) => {
+            // A rate limit changed while it was starting still has to take hold.
+            session.apply(&app.settings);
+            app.session = Some(Arc::new(session));
+        }
+    }
 }
 
 fn map_key(key: KeyEvent, mode: Mode, tab: Tab, escaped: bool) -> Option<Action> {
@@ -373,10 +431,7 @@ async fn act(app: &mut App, action: Action) {
         Action::PrevTab => switch(app, app.tab.shifted(-1)),
         Action::Go(tab) => switch(app, tab),
         Action::Move(by) => move_cursor(app, by),
-        Action::FocusQuery => {
-            switch(app, Tab::Search);
-            app.typing = true;
-        }
+        Action::FocusQuery => focus_query(app),
         Action::Dismiss => dismiss(app),
         Action::Home => home(app),
         Action::Type(typed) => {
@@ -400,6 +455,15 @@ async fn act(app: &mut App, action: Action) {
     }
 }
 
+/// The Settings page on its own has no search box to focus.
+fn focus_query(app: &mut App) {
+    if app.settings_only {
+        return;
+    }
+    switch(app, Tab::Search);
+    app.typing = true;
+}
+
 /// Three text boxes, one at a time, and which one is open is what the mode says.
 fn typing_into(app: &mut App) -> Option<&mut String> {
     match app.mode() {
@@ -417,6 +481,11 @@ fn switch(app: &mut App, tab: Tab) {
     save(app);
     app.tab = tab;
     app.typing = tab == Tab::Search && app.results.is_empty();
+
+    // Attached, the session reading these is somewhere else and reads its own copy.
+    if tab == Tab::Settings && app.attached() {
+        app.say("These are this machine's settings. The session elsewhere keeps its own.");
+    }
 }
 
 fn move_cursor(app: &mut App, by: isize) {
@@ -562,14 +631,18 @@ fn download(app: &mut App, pick_folder: bool) {
 }
 
 fn start_add(app: &mut App, input: Input, folder: PathBuf) {
-    let (Some(engine), Some(events)) = (app.engine.clone(), app.events.clone()) else {
-        app.say("This page is running without a torrent session.");
+    let (Some(session), Some(events)) = (app.session.clone(), app.events.clone()) else {
+        let wait = match app.starting() {
+            true => "The session is still starting. Try again in a moment.",
+            false => "This page is running without a torrent session.",
+        };
+        app.say(wait);
         return;
     };
     app.say("Adding. A magnet waits for peers to hand over the file list.");
     tokio::spawn(async move {
-        let message = match engine.add(&input, &folder).await {
-            Ok(_) => format!("Downloading into {}", folder.display()),
+        let message = match session.add(&input, &folder).await {
+            Ok(()) => format!("Downloading into {}", folder.display()),
             Err(e) => format!("{e:#}"),
         };
         let _ = events.send(Event::Notice(message));
@@ -609,12 +682,12 @@ async fn pause_resume(app: &mut App) {
         return;
     };
     let (id, running) = (torrent.id, torrent.state != State::Paused);
-    let Some(engine) = app.engine.clone() else {
+    let Some(session) = app.session.clone() else {
         return;
     };
     let outcome = match running {
-        true => engine.pause(id).await,
-        false => engine.resume(id).await,
+        true => session.pause(id).await,
+        false => session.resume(id).await,
     };
     match outcome {
         Ok(()) if running => app.say("Paused."),
@@ -651,14 +724,16 @@ async fn confirm(app: &mut App) {
 }
 
 async fn remove(app: &mut App, id: DownloadId) {
-    let Some(engine) = app.engine.clone() else {
+    let Some(session) = app.session.clone() else {
         return;
     };
-    match engine.remove(id).await {
+    match session.remove(id).await {
         Ok(()) => app.say("Stopped. The files are still on disk."),
         Err(e) => app.say(format!("{e:#}")),
     }
-    app.torrents = engine.snapshot();
+    if let Ok(torrents) = session.snapshot().await {
+        app.torrents = torrents;
+    }
 }
 
 fn begin_edit(app: &mut App) {
@@ -705,8 +780,8 @@ fn nudge(app: &mut App, up: bool) {
 /// takes hold on the next start says so on its own row.
 fn changed(app: &mut App) {
     app.unsaved = true;
-    if let Some(engine) = &app.engine {
-        engine.apply(&app.settings);
+    if let Some(session) = &app.session {
+        session.apply(&app.settings);
     }
 }
 
@@ -721,11 +796,16 @@ fn save(app: &mut App) {
 }
 
 async fn tick(app: &mut App) {
-    let Some(engine) = app.engine.clone() else {
+    let Some(session) = app.session.clone() else {
         return;
     };
-    app.torrents = engine.snapshot();
-    if let Err(e) = engine.enforce(&app.settings).await {
+    match session.snapshot().await {
+        Ok(torrents) => app.torrents = torrents,
+        // A session that did not answer this second is not a reason to lose the
+        // interface. The next tick asks it again.
+        Err(e) => app.say(format!("{e:#}")),
+    }
+    if let Err(e) = session.enforce(&app.settings).await {
         app.say(format!("{e:#}"));
     }
     let (downloading, seeding) = (app.downloads().len(), app.seeds().len());
@@ -755,7 +835,11 @@ mod tests {
     }
 
     fn screen(app: &mut App) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        sized(app, 100, 30)
+    }
+
+    fn sized(app: &mut App, width: u16, height: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal.draw(|frame| render::draw(frame, app)).unwrap();
         terminal
             .backend()
@@ -920,6 +1004,25 @@ mod tests {
         assert!(!app.searching);
         assert!(app.typing);
         assert!(screen(&mut app).contains("BitTorrent Acquisition & Keyword Aggregator"));
+    }
+
+    #[test]
+    fn the_settings_page_on_its_own_starts_on_a_setting_rather_than_in_a_search_box() {
+        let mut app = App::new(Settings::default(), None);
+        app.tab = Tab::Settings;
+        app.settings_only = true;
+        app.typing = false;
+
+        assert_eq!(app.mode(), Mode::Browsing);
+        assert_eq!(
+            map_key(press(KeyCode::Char('q')), app.mode(), app.tab, false),
+            Some(Action::Quit)
+        );
+
+        // The one key that would put the search box back has nothing to put it on.
+        focus_query(&mut app);
+        assert_eq!(app.tab, Tab::Settings);
+        assert_eq!(app.mode(), Mode::Browsing);
     }
 
     #[test]
@@ -1108,6 +1211,76 @@ mod tests {
         assert!(drawn.contains("Keys"));
         assert!(drawn.contains("Copy the magnet link"));
         assert!(drawn.contains("Close what is open, twice for the start"));
+    }
+
+    fn attached() -> App {
+        let remote = Remote::at("127.0.0.1:4241".parse().unwrap()).unwrap();
+        App::new(
+            Settings::default(),
+            Some(Arc::new(Session::Attached(remote))),
+        )
+    }
+
+    #[test]
+    fn a_session_that_is_still_starting_says_so_rather_than_looking_broken() {
+        let mut app = App::new(Settings::default(), None);
+        assert!(app.starting());
+        assert!(screen(&mut app).contains("Starting the session."));
+    }
+
+    #[test]
+    fn the_settings_page_on_its_own_is_not_waiting_for_a_session() {
+        let mut app = App::new(Settings::default(), None);
+        app.settings_only = true;
+        assert!(!app.starting());
+        assert!(!screen(&mut app).contains("Starting the session."));
+    }
+
+    #[test]
+    fn an_attached_interface_says_which_session_it_is_driving() {
+        let mut app = attached();
+        app.tab = Tab::Downloads;
+        app.typing = false;
+        assert!(app.attached());
+        assert!(!app.starting());
+        assert!(screen(&mut app).contains("attached"));
+    }
+
+    #[test]
+    fn the_settings_page_says_whose_settings_these_are_when_attached() {
+        let mut app = attached();
+        app.typing = false;
+        switch(&mut app, Tab::Settings);
+        assert!(app.notice.unwrap().contains("this machine's settings"));
+    }
+
+    #[test]
+    fn a_narrow_terminal_keeps_the_columns_worth_keeping() {
+        let mut app = App::new(Settings::default(), None);
+        app.results = vec![found("Dune Part Two")];
+        app.typing = false;
+
+        let drawn = sized(&mut app, 40, 12);
+        assert!(drawn.contains("Dune Part Two"));
+        assert!(drawn.contains("SEED"));
+        assert!(!drawn.contains("SOURCE"));
+
+        app.tab = Tab::Downloads;
+        app.torrents = vec![running("debian.iso", false)];
+        let drawn = sized(&mut app, 40, 12);
+        assert!(drawn.contains("debian.iso"));
+        assert!(drawn.contains("PROGRESS"));
+        assert!(!drawn.contains("PEERS"));
+    }
+
+    #[test]
+    fn a_wide_terminal_still_gets_every_column() {
+        let mut app = App::new(Settings::default(), None);
+        app.results = vec![found("Dune Part Two")];
+        app.typing = false;
+        let drawn = screen(&mut app);
+        assert!(drawn.contains("SOURCE"));
+        assert!(drawn.contains("SIZE"));
     }
 
     #[test]

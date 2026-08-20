@@ -25,6 +25,10 @@ const WORDMARK: &str = r"
 
 const TAGLINE: &str = "BitTorrent Acquisition & Keyword Aggregator";
 
+/// Narrower than this and a table drops its middle columns rather than cutting every
+/// one of them in half.
+const NARROW: u16 = 60;
+
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let [top, body, bottom] = Layout::vertical([
         Constraint::Length(1),
@@ -118,31 +122,40 @@ fn search(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let narrow = results.width < NARROW;
     let rows = app.results.iter().map(|torrent| {
         let mark = match super::is_risky(app, torrent) {
             true => "! ",
             false => "",
         };
-        Row::new(vec![
-            Cell::from(torrent.source),
-            Cell::from(torrent.category.to_string()),
-            Cell::from(torrent.seeders.to_string()),
-            Cell::from(human_size(torrent.size_bytes)),
-            Cell::from(format!("{mark}{}", torrent.title)),
-        ])
+        let title = Cell::from(format!("{mark}{}", torrent.title));
+        match narrow {
+            true => Row::new(vec![Cell::from(torrent.seeders.to_string()), title]),
+            false => Row::new(vec![
+                Cell::from(torrent.source),
+                Cell::from(torrent.category.to_string()),
+                Cell::from(torrent.seeders.to_string()),
+                Cell::from(human_size(torrent.size_bytes)),
+                title,
+            ]),
+        }
     });
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(12),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(10),
-            Constraint::Min(10),
-        ],
-    )
-    .header(header(accent, ["SOURCE", "SHELF", "SEED", "SIZE", "TITLE"]))
+    let table = match narrow {
+        true => Table::new(rows, [Constraint::Length(6), Constraint::Min(10)])
+            .header(header(accent, ["SEED", "TITLE"])),
+        false => Table::new(
+            rows,
+            [
+                Constraint::Length(12),
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Length(10),
+                Constraint::Min(10),
+            ],
+        )
+        .header(header(accent, ["SOURCE", "SHELF", "SEED", "SIZE", "TITLE"])),
+    }
     .row_highlight_style(theme::highlight(accent));
 
     frame.render_stateful_widget(table, results, &mut selection(app));
@@ -200,34 +213,43 @@ fn downloads(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let narrow = area.width < NARROW;
     let rows = list.iter().map(|torrent| {
-        Row::new(vec![
-            Cell::from(name_of(torrent)),
-            Cell::from(bar(torrent)),
-            Cell::from(human_size(torrent.total_bytes)),
-            Cell::from(format!("{}/s", human_size(torrent.download_bps))),
-            Cell::from(human_eta(torrent.eta)),
-            Cell::from(torrent.peers.to_string()),
-            Cell::from(torrent.state.to_string()),
-        ])
+        let named = Cell::from(name_of(torrent));
+        match narrow {
+            true => Row::new(vec![named, Cell::from(bar(torrent))]),
+            false => Row::new(vec![
+                named,
+                Cell::from(bar(torrent)),
+                Cell::from(human_size(torrent.total_bytes)),
+                Cell::from(format!("{}/s", human_size(torrent.download_bps))),
+                Cell::from(human_eta(torrent.eta)),
+                Cell::from(torrent.peers.to_string()),
+                Cell::from(torrent.state.to_string()),
+            ]),
+        }
     });
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Min(16),
-            Constraint::Length(18),
-            Constraint::Length(9),
-            Constraint::Length(11),
-            Constraint::Length(11),
-            Constraint::Length(5),
-            Constraint::Length(8),
-        ],
-    )
-    .header(header(
-        accent,
-        ["NAME", "PROGRESS", "SIZE", "DOWN", "LEFT", "PEERS", "STATE"],
-    ))
+    let table = match narrow {
+        true => Table::new(rows, [Constraint::Min(10), Constraint::Length(18)])
+            .header(header(accent, ["NAME", "PROGRESS"])),
+        false => Table::new(
+            rows,
+            [
+                Constraint::Min(16),
+                Constraint::Length(18),
+                Constraint::Length(9),
+                Constraint::Length(11),
+                Constraint::Length(11),
+                Constraint::Length(5),
+                Constraint::Length(8),
+            ],
+        )
+        .header(header(
+            accent,
+            ["NAME", "PROGRESS", "SIZE", "DOWN", "LEFT", "PEERS", "STATE"],
+        )),
+    }
     .row_highlight_style(theme::highlight(accent));
 
     frame.render_stateful_widget(table, area, &mut selection(app));
@@ -241,32 +263,50 @@ fn seeding(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let narrow = area.width < NARROW;
     let rows = list.iter().map(|torrent| {
-        Row::new(vec![
-            Cell::from(name_of(torrent)),
-            Cell::from(format!("{:.2}", torrent.ratio)),
-            Cell::from(human_size(torrent.uploaded_bytes)),
-            Cell::from(format!("{}/s", human_size(torrent.upload_bps))),
-            Cell::from(torrent.peers.to_string()),
-            Cell::from(torrent.state.to_string()),
-        ])
+        let named = Cell::from(name_of(torrent));
+        let ratio = Cell::from(format!("{:.2}", torrent.ratio));
+        let up = Cell::from(format!("{}/s", human_size(torrent.upload_bps)));
+        match narrow {
+            true => Row::new(vec![named, ratio, up]),
+            false => Row::new(vec![
+                named,
+                ratio,
+                Cell::from(human_size(torrent.uploaded_bytes)),
+                up,
+                Cell::from(torrent.peers.to_string()),
+                Cell::from(torrent.state.to_string()),
+            ]),
+        }
     });
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Min(16),
-            Constraint::Length(7),
-            Constraint::Length(10),
-            Constraint::Length(11),
-            Constraint::Length(5),
-            Constraint::Length(8),
-        ],
-    )
-    .header(header(
-        accent,
-        ["NAME", "RATIO", "SHARED", "UP", "PEERS", "STATE"],
-    ))
+    let table = match narrow {
+        true => Table::new(
+            rows,
+            [
+                Constraint::Min(10),
+                Constraint::Length(7),
+                Constraint::Length(11),
+            ],
+        )
+        .header(header(accent, ["NAME", "RATIO", "UP"])),
+        false => Table::new(
+            rows,
+            [
+                Constraint::Min(16),
+                Constraint::Length(7),
+                Constraint::Length(10),
+                Constraint::Length(11),
+                Constraint::Length(5),
+                Constraint::Length(8),
+            ],
+        )
+        .header(header(
+            accent,
+            ["NAME", "RATIO", "SHARED", "UP", "PEERS", "STATE"],
+        )),
+    }
     .row_highlight_style(theme::highlight(accent));
 
     frame.render_stateful_widget(table, area, &mut selection(app));
@@ -308,15 +348,19 @@ fn settings(frame: &mut Frame, app: &mut App, area: Rect) {
         format!("{}{restart}", field.description)
     });
 
-    let table = Table::new(
-        rows,
-        [
+    let widths = match list.width < NARROW {
+        true => [
+            Constraint::Length(9),
+            Constraint::Length(18),
+            Constraint::Min(8),
+        ],
+        false => [
             Constraint::Length(11),
             Constraint::Length(26),
             Constraint::Min(10),
         ],
-    )
-    .row_highlight_style(theme::highlight(accent));
+    };
+    let table = Table::new(rows, widths).row_highlight_style(theme::highlight(accent));
 
     let mut state = TableState::new().with_selected(Some(at));
     frame.render_stateful_widget(table, list, &mut state);
@@ -336,16 +380,22 @@ fn status(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let counts = format!(
-        "{} downloading  {} seeding",
+        "{}{} downloading  {} seeding",
+        match app.attached() {
+            true => "attached  ",
+            false => "",
+        },
         app.downloads().len(),
         app.seeds().len()
     );
 
-    let [message, tally] = Layout::horizontal([
-        Constraint::Min(0),
-        Constraint::Length(counts.len() as u16 + 1),
-    ])
-    .areas(area);
+    // On a narrow terminal the hint is worth more than the tally, so the tally goes.
+    let room = match area.width < NARROW {
+        true => 0,
+        false => counts.len() as u16 + 1,
+    };
+    let [message, tally] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(room)]).areas(area);
     frame.render_widget(Paragraph::new(Line::from(left)), message);
     frame.render_widget(
         Paragraph::new(counts)
@@ -356,6 +406,9 @@ fn status(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn hint(app: &App) -> &'static str {
+    if app.starting() {
+        return "Starting the session.";
+    }
     match (app.mode(), app.tab) {
         (Mode::Typing, _) => "Enter searches, or browses when the box is empty.",
         (Mode::Editing, _) => "Type a value, Enter keeps it, Esc leaves it alone.",

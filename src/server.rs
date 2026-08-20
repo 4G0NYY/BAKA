@@ -5,20 +5,20 @@ use std::ffi::OsString;
 use std::fs;
 use std::future::Future;
 use std::io::SeekFrom;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufReader,
 };
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, lookup_host};
 
-use crate::config::Settings;
-use crate::engine::{Engine, Input};
+use crate::config::{Server, Settings};
+use crate::engine::{DownloadId, Engine, Input, Progress};
 use crate::search::{encode, human_size};
 
 /// How often the watched folder is looked at, and how long a file has to have been
@@ -31,6 +31,21 @@ const FAILED: &str = "failed";
 
 /// A magnet link is a few hundred bytes. Anything past this is not one.
 const MOST_A_REQUEST_MAY_SEND: usize = 64 * 1024;
+
+const TEXT: &str = "text/plain; charset=utf-8";
+const JSON: &str = "application/json";
+
+/// What an attached interface reads to draw its Downloads and Seeding tabs.
+const TORRENTS: &str = "/torrents";
+
+/// Which folder to download into, when whoever asked wants one that is not the
+/// daemon's own. An attached interface sends it for a download the user picked a
+/// folder for.
+const FOLDER: &str = "folder";
+
+/// How long an attached interface waits on a daemon before saying it cannot reach it.
+/// Long enough for a busy session, short enough that a key press is never stuck.
+const REPLY_WITHIN: Duration = Duration::from_secs(5);
 
 /// Download anything dropped into a folder.
 pub async fn watch(settings: &Settings, folder: &Path) -> Result<()> {
@@ -274,23 +289,89 @@ async fn intake(stream: &mut TcpStream, engine: &Arc<Engine>, folder: &Path) -> 
     let (reader, mut writer) = stream.split();
     let request = read(&mut BufReader::new(reader)).await?;
 
-    let (status, said) = match request.method.as_str() {
-        "GET" => ("200 OK", running(engine)),
-        "POST" => ("200 OK", accept(&request.body, engine, folder)),
+    let (status, kind, said) = match (request.method.as_str(), request.path.as_str()) {
+        // An attached interface reads the JSON. Anything else asking gets the same
+        // list written the way a person reading it in a terminal would want it.
+        ("GET", TORRENTS) => match serde_json::to_string(&engine.snapshot()) {
+            Ok(listed) => ("200 OK", JSON, listed),
+            Err(e) => ("500 Internal Server Error", TEXT, format!("{e}\n")),
+        },
+        ("GET", _) => ("200 OK", TEXT, running(engine)),
+        ("POST", path) => match ordered(path) {
+            Some((id, order)) => obey(engine, id, order).await,
+            None => {
+                let into = request.folder.as_deref().map_or(folder, Path::new);
+                let (status, said) = accept(&request.body, engine, into);
+                (status, TEXT, said)
+            }
+        },
         _ => (
             "405 Method Not Allowed",
-            "Send a magnet with POST.\n".into(),
+            TEXT,
+            "Send a magnet with POST.\n".to_string(),
         ),
     };
-    reply(&mut writer, status, "text/plain; charset=utf-8", &said).await
+    reply(&mut writer, status, kind, &said).await
+}
+
+/// What an attached interface asks for when a user presses a key on a download.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Order {
+    Pause,
+    Resume,
+    Remove,
+}
+
+impl Order {
+    fn word(self) -> &'static str {
+        match self {
+            Self::Pause => "pause",
+            Self::Resume => "resume",
+            Self::Remove => "remove",
+        }
+    }
+}
+
+fn order_path(id: DownloadId, order: Order) -> String {
+    format!("{TORRENTS}/{id}/{}", order.word())
+}
+
+fn ordered(path: &str) -> Option<(DownloadId, Order)> {
+    let (id, word) = path
+        .strip_prefix(TORRENTS)?
+        .strip_prefix('/')?
+        .split_once('/')?;
+    let order = [Order::Pause, Order::Resume, Order::Remove]
+        .into_iter()
+        .find(|order| order.word() == word)?;
+    Some((id.parse().ok()?, order))
+}
+
+async fn obey(
+    engine: &Engine,
+    id: DownloadId,
+    order: Order,
+) -> (&'static str, &'static str, String) {
+    let outcome = match order {
+        Order::Pause => engine.pause(id).await,
+        Order::Resume => engine.resume(id).await,
+        Order::Remove => engine.remove(id).await,
+    };
+    match outcome {
+        Ok(()) => ("200 OK", TEXT, "Done.\n".to_string()),
+        Err(e) => ("404 Not Found", TEXT, format!("{e:#}\n")),
+    }
 }
 
 /// Adding a magnet waits for peers to hand over the file list, which can take longer
 /// than a request should, so what was understood is answered now and added after.
-fn accept(body: &str, engine: &Arc<Engine>, folder: &Path) -> String {
+fn accept(body: &str, engine: &Arc<Engine>, folder: &Path) -> (&'static str, String) {
     let offered = listed(body);
     if offered.is_empty() {
-        return "Nothing there names a torrent.\n".to_string();
+        return (
+            "400 Bad Request",
+            "Nothing there names a torrent.\n".to_string(),
+        );
     }
 
     for input in &offered {
@@ -303,7 +384,7 @@ fn accept(body: &str, engine: &Arc<Engine>, folder: &Path) -> String {
             }
         });
     }
-    format!("{} taken.\n", offered.len())
+    ("200 OK", format!("{} taken.\n", offered.len()))
 }
 
 fn running(engine: &Engine) -> String {
@@ -510,10 +591,133 @@ fn content_type(target: &Path) -> &'static str {
     }
 }
 
+/// The other end of the intake: an interface driving a session that is running
+/// somewhere else. Both halves of that conversation live in this file, so the paths
+/// one writes are the paths the other reads.
+pub struct Remote {
+    client: reqwest::Client,
+    at: String,
+}
+
+impl Remote {
+    /// The client on its own, with nothing said to whoever is at the other end.
+    pub fn at(at: SocketAddr) -> Result<Self> {
+        Ok(Self {
+            client: reqwest::Client::builder().timeout(REPLY_WITHIN).build()?,
+            at: format!("http://{at}"),
+        })
+    }
+
+    /// Nothing given is the daemon on this machine, at the address and port the
+    /// Settings page has. Anything else is an address or a name, with or without a
+    /// port of its own.
+    pub async fn reach(server: &Server, given: Option<&str>) -> Result<Self> {
+        let at = match given {
+            None => SocketAddr::new(here(server.bind), server.intake_port),
+            Some(given) => {
+                let text = match given.contains(':') {
+                    true => given.to_string(),
+                    false => format!("{given}:{}", server.intake_port),
+                };
+                match text.parse() {
+                    Ok(at) => at,
+                    Err(_) => lookup_host(&text)
+                        .await
+                        .with_context(|| format!("could not look up {text}"))?
+                        .next()
+                        .ok_or_else(|| anyhow!("{text} has no address"))?,
+                }
+            }
+        };
+
+        let remote = Self::at(at)?;
+
+        // Attaching to nothing is worth hearing about here, rather than as a line in
+        // an interface that has nothing to show and nothing to drive. Once attached,
+        // a session that goes quiet for a moment is a notice and not the end of it.
+        remote.snapshot().await.with_context(|| {
+            format!(
+                "nothing is answering at {}, where baka serve would be",
+                remote.at
+            )
+        })?;
+        Ok(remote)
+    }
+
+    pub fn address(&self) -> &str {
+        &self.at
+    }
+
+    pub async fn snapshot(&self) -> Result<Vec<Progress>> {
+        let listed = self
+            .client
+            .get(format!("{}{TORRENTS}", self.at))
+            .send()
+            .await
+            .with_context(|| format!("could not reach BAKA at {}", self.at))?
+            .error_for_status()?
+            .json()
+            .await
+            .context("what came back was not a list of torrents")?;
+        Ok(listed)
+    }
+
+    pub async fn add(&self, input: &Input, folder: &Path) -> Result<()> {
+        let line = match input {
+            Input::Magnet(link) => link.clone(),
+            // A path is a path on the machine the session is running on, which is the
+            // same machine whenever the daemon is the one on this one.
+            Input::File(path) => path.display().to_string(),
+        };
+        self.client
+            .post(&self.at)
+            .header(FOLDER, folder.display().to_string())
+            .body(line)
+            .send()
+            .await
+            .with_context(|| format!("could not reach BAKA at {}", self.at))?
+            .error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn pause(&self, id: DownloadId) -> Result<()> {
+        self.order(id, Order::Pause).await
+    }
+
+    pub async fn resume(&self, id: DownloadId) -> Result<()> {
+        self.order(id, Order::Resume).await
+    }
+
+    pub async fn remove(&self, id: DownloadId) -> Result<()> {
+        self.order(id, Order::Remove).await
+    }
+
+    async fn order(&self, id: DownloadId, order: Order) -> Result<()> {
+        self.client
+            .post(format!("{}{}", self.at, order_path(id, order)))
+            .send()
+            .await
+            .with_context(|| format!("could not reach BAKA at {}", self.at))?
+            .error_for_status()?;
+        Ok(())
+    }
+}
+
+/// A daemon listening on every address is still reached at the loopback one from the
+/// machine it is running on.
+fn here(bind: IpAddr) -> IpAddr {
+    match (bind.is_unspecified(), bind) {
+        (false, _) => bind,
+        (true, IpAddr::V6(_)) => Ipv6Addr::LOCALHOST.into(),
+        (true, IpAddr::V4(_)) => Ipv4Addr::LOCALHOST.into(),
+    }
+}
+
 struct Request {
     method: String,
     path: String,
     range: Option<(u64, Option<u64>)>,
+    folder: Option<String>,
     body: String,
 }
 
@@ -527,6 +731,7 @@ async fn read<R: AsyncBufRead + Unpin>(reader: &mut R) -> Result<Request> {
 
     let mut length = 0;
     let mut range = None;
+    let mut folder = None;
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header).await? == 0 {
@@ -546,6 +751,9 @@ async fn read<R: AsyncBufRead + Unpin>(reader: &mut R) -> Result<Request> {
         if name.eq_ignore_ascii_case("range") {
             range = wanted(value);
         }
+        if name.eq_ignore_ascii_case(FOLDER) && !value.is_empty() {
+            folder = Some(value.to_string());
+        }
     }
 
     let mut body = vec![0; length.min(MOST_A_REQUEST_MAY_SEND)];
@@ -555,6 +763,7 @@ async fn read<R: AsyncBufRead + Unpin>(reader: &mut R) -> Result<Request> {
         method,
         path,
         range,
+        folder,
         body: String::from_utf8_lossy(&body).into_owned(),
     })
 }
@@ -670,6 +879,46 @@ mod tests {
         assert!(inside(root, "/Cargo.toml").is_some());
         assert!(inside(root, "/src").is_some());
         assert_eq!(inside(root, "/"), root.canonicalize().ok());
+    }
+
+    #[test]
+    fn an_order_is_read_back_the_way_it_was_written() {
+        for order in [Order::Pause, Order::Resume, Order::Remove] {
+            assert_eq!(ordered(&order_path(7, order)), Some((7, order)));
+        }
+    }
+
+    #[test]
+    fn anything_else_posted_is_a_magnet_rather_than_an_order() {
+        assert_eq!(ordered("/"), None);
+        assert_eq!(ordered("/torrents"), None);
+        assert_eq!(ordered("/torrents/7/eat"), None);
+        assert_eq!(ordered("/torrents/seven/pause"), None);
+        assert_eq!(ordered("/elsewhere/7/pause"), None);
+    }
+
+    #[tokio::test]
+    async fn an_attached_interface_says_which_folder_it_wants() {
+        let raw = "POST / HTTP/1.1\r\nFolder: /media/films\r\nContent-Length: 7\r\n\r\nmagnet:";
+        let request = read(&mut BufReader::new(raw.as_bytes())).await.unwrap();
+        assert_eq!(request.folder.as_deref(), Some("/media/films"));
+    }
+
+    #[tokio::test]
+    async fn a_request_without_one_leaves_the_folder_to_the_daemon() {
+        let raw = "POST / HTTP/1.1\r\nContent-Length: 7\r\n\r\nmagnet:";
+        let request = read(&mut BufReader::new(raw.as_bytes())).await.unwrap();
+        assert_eq!(request.folder, None);
+    }
+
+    #[test]
+    fn a_daemon_listening_everywhere_is_reached_at_the_loopback_address() {
+        let four: IpAddr = Ipv4Addr::LOCALHOST.into();
+        let six: IpAddr = Ipv6Addr::LOCALHOST.into();
+        assert_eq!(here(Ipv4Addr::UNSPECIFIED.into()), four);
+        assert_eq!(here(Ipv6Addr::UNSPECIFIED.into()), six);
+        let elsewhere: IpAddr = "192.168.1.5".parse().unwrap();
+        assert_eq!(here(elsewhere), elsewhere);
     }
 
     #[test]

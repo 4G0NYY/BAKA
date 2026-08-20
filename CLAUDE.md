@@ -85,8 +85,9 @@ src/
   config.rs    TOML config and platform paths
   search/      Indexer trait plus one file per source
   engine.rs    the only module that knows librqbit exists
+  session.rs   whether the interface drives its own engine or an attached one
   tui/         ratatui views and key handling
-  server.rs    watch, serve and files modes
+  server.rs    watch, serve and files modes, plus the client an attached TUI uses
 ```
 
 Rules that follow from this:

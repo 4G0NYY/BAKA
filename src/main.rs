@@ -2,6 +2,7 @@ mod config;
 mod engine;
 mod search;
 mod server;
+mod session;
 mod tui;
 
 use std::io::{self, Write};
@@ -60,6 +61,12 @@ enum Command {
         #[arg(long)]
         daemon: bool,
     },
+    /// Drive a BAKA that is already running, here or on another machine.
+    Attach {
+        /// Where it is listening. Defaults to the bind address and the magnet intake
+        /// port on the Settings page.
+        address: Option<String>,
+    },
     /// Open the settings page without the rest of the interface.
     Settings {
         /// Print the settings file path and nothing else.
@@ -70,9 +77,24 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let settings = Settings::load()?;
-    match Cli::parse().command {
-        None => tui::run(settings).await,
+    let loaded = Settings::load()?;
+    let complaint = loaded.complaint();
+    let settings = loaded.settings;
+    let command = Cli::parse().command;
+
+    // The interface has a status line to say this on. Everything else has stderr.
+    let has_a_status_line = matches!(
+        command,
+        None | Some(Command::Attach { .. }) | Some(Command::Settings { path: false })
+    );
+    if let Some(complaint) = &complaint
+        && !has_a_status_line
+    {
+        eprintln!("{complaint}");
+    }
+
+    match command {
+        None => tui::run(settings, complaint).await,
         Some(Command::Search { query, category }) => {
             search(&settings, query.as_deref().unwrap_or_default(), category).await
         }
@@ -92,9 +114,13 @@ async fn main() -> Result<()> {
             true => server::detach(),
             false => server::files(&settings).await,
         },
+        Some(Command::Attach { address }) => {
+            let remote = server::Remote::reach(&settings.server, address.as_deref()).await?;
+            tui::attach(settings, remote, complaint).await
+        }
         Some(Command::Settings { path }) => match path {
             true => print_path(),
-            false => tui::settings_page(settings).await,
+            false => tui::settings_page(settings, complaint).await,
         },
     }
 }

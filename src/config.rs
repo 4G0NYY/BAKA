@@ -71,6 +71,7 @@ pub struct Search {
     pub timeout_secs: u32,
     pub result_limit: u32,
     pub min_seeders: u32,
+    pub remember_minutes: u32,
 }
 
 /// Which sources a search asks. Built from the indexer registry rather than written
@@ -182,6 +183,7 @@ impl Default for Search {
             // YTS reports 0 seeds for most of its catalogue, so a floor of 1 would
             // quietly hide a whole source.
             min_seeders: 0,
+            remember_minutes: 5,
         }
     }
 }
@@ -222,27 +224,57 @@ impl fmt::Display for Accent {
     }
 }
 
+/// A settings file and whatever in it BAKA could not read. A value this version does
+/// not understand costs that one setting rather than every setting in the file.
+pub struct Loaded {
+    pub settings: Settings,
+    pub dropped: Vec<String>,
+}
+
+impl Loaded {
+    fn whole(settings: Settings) -> Self {
+        Self {
+            settings,
+            dropped: Vec::new(),
+        }
+    }
+
+    /// What to tell the user, once, when something in their file was passed over.
+    pub fn complaint(&self) -> Option<String> {
+        match self.dropped.is_empty() {
+            true => None,
+            false => Some(format!(
+                "Could not read these settings, so they are back at their defaults: {}",
+                self.dropped.join(", ")
+            )),
+        }
+    }
+}
+
 impl Settings {
     pub fn path() -> Result<PathBuf, ConfigError> {
         let base = BaseDirs::new().ok_or(ConfigError::NoConfigDir)?;
         Ok(base.config_dir().join("baka").join("config.toml"))
     }
 
-    pub fn load() -> Result<Self, ConfigError> {
+    pub fn load() -> Result<Loaded, ConfigError> {
         Self::load_from(&Self::path()?)
     }
 
-    pub fn load_from(path: &Path) -> Result<Self, ConfigError> {
+    pub fn load_from(path: &Path) -> Result<Loaded, ConfigError> {
         let text = match fs::read_to_string(path) {
             Ok(text) => text,
             // No file is a first run, not a failure.
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(Loaded::whole(Self::default()));
+            }
             Err(e) => return Err(ConfigError::Read(path.to_path_buf(), e)),
         };
-        let mut settings: Self =
+        let table: toml::Table =
             toml::from_str(&text).map_err(|e| ConfigError::Parse(path.to_path_buf(), e))?;
-        settings.search.sources.follow_the_registry();
-        Ok(settings)
+        let mut loaded = salvage(table);
+        loaded.settings.search.sources.follow_the_registry();
+        Ok(loaded)
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
@@ -382,6 +414,13 @@ impl Settings {
                 Value::Count(&mut self.search.min_seeders),
             )
             .zero_means("no minimum"),
+            Field::new(
+                SEARCH,
+                "Remember results (minutes)",
+                "Repeat a search within this long and the sources are not asked again.",
+                Value::Count(&mut self.search.remember_minutes),
+            )
+            .zero_means("never"),
             Field::new(
                 SERVER,
                 "Bind address",
@@ -627,6 +666,45 @@ impl Accent {
     }
 }
 
+/// A file written by an older version, or edited by hand, can hold a value this one
+/// cannot read. Every other key is kept, which is the difference between one setting
+/// going back to its default and all of them doing so.
+///
+/// A key is kept only if the settings still make sense with it, so what comes out of
+/// here always loads.
+fn salvage(table: toml::Table) -> Loaded {
+    if let Ok(settings) = toml::Value::Table(table.clone()).try_into::<Settings>() {
+        return Loaded::whole(settings);
+    }
+
+    let mut kept = toml::Table::new();
+    let mut dropped = Vec::new();
+    for (group, value) in table {
+        let Some(fields) = value.as_table() else {
+            dropped.push(group);
+            continue;
+        };
+        let mut good = toml::Table::new();
+        for (key, value) in fields {
+            let mut trial = good.clone();
+            trial.insert(key.clone(), value.clone());
+
+            let mut whole = kept.clone();
+            whole.insert(group.clone(), toml::Value::Table(trial.clone()));
+            match toml::Value::Table(whole).try_into::<Settings>() {
+                Ok(_) => good = trial,
+                Err(_) => dropped.push(format!("{group}.{key}")),
+            }
+        }
+        kept.insert(group, toml::Value::Table(good));
+    }
+
+    Loaded {
+        settings: toml::Value::Table(kept).try_into().unwrap_or_default(),
+        dropped,
+    }
+}
+
 /// Resume data, saved torrents and the DHT routing table. State rather than settings, so
 /// it keeps its own directory and can be deleted without losing anything a user chose.
 pub fn state_dir() -> Result<PathBuf, ConfigError> {
@@ -670,8 +748,54 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_not_an_error() {
-        let settings = Settings::load_from(Path::new("no/such/config.toml")).unwrap();
-        assert_eq!(settings, Settings::default());
+        let loaded = Settings::load_from(Path::new("no/such/config.toml")).unwrap();
+        assert_eq!(loaded.settings, Settings::default());
+        assert!(loaded.complaint().is_none());
+    }
+
+    fn salvaged(text: &str) -> Loaded {
+        salvage(toml::from_str(text).unwrap())
+    }
+
+    #[test]
+    fn a_value_this_version_cannot_read_costs_that_setting_and_no_other() {
+        let text = "[downloads]\nmax_concurrent = 9\nrate_limit_kib = \"fast\"\n\
+                    [network]\nlisten_port = 5000\n";
+        let loaded = salvaged(text);
+        assert_eq!(loaded.settings.downloads.max_concurrent, 9);
+        assert_eq!(loaded.settings.network.listen_port, 5000);
+        assert_eq!(
+            loaded.settings.downloads.rate_limit_kib,
+            Downloads::default().rate_limit_kib
+        );
+    }
+
+    #[test]
+    fn a_setting_that_was_passed_over_is_named_rather_than_dropped_quietly() {
+        let loaded = salvaged("[seeding]\nstop_at_ratio = \"lots\"\n");
+        assert_eq!(loaded.dropped, vec!["seeding.stop_at_ratio".to_string()]);
+        assert!(
+            loaded
+                .complaint()
+                .unwrap()
+                .contains("seeding.stop_at_ratio")
+        );
+    }
+
+    #[test]
+    fn a_group_that_is_not_a_group_at_all_takes_only_itself_down() {
+        let loaded = salvaged("network = 3\n[downloads]\nmax_concurrent = 4\n");
+        assert_eq!(loaded.dropped, vec!["network".to_string()]);
+        assert_eq!(loaded.settings.downloads.max_concurrent, 4);
+        assert_eq!(loaded.settings.network, Network::default());
+    }
+
+    #[test]
+    fn a_file_that_reads_cleanly_has_nothing_to_report() {
+        let text = toml::to_string_pretty(&Settings::default()).unwrap();
+        let loaded = salvaged(&text);
+        assert!(loaded.dropped.is_empty());
+        assert_eq!(loaded.settings, Settings::default());
     }
 
     #[test]
