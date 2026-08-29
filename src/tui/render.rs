@@ -148,7 +148,7 @@ fn search(frame: &mut Frame, app: &App, area: Rect) {
             rows,
             [
                 Constraint::Length(12),
-                Constraint::Length(6),
+                Constraint::Length(10),
                 Constraint::Length(6),
                 Constraint::Length(10),
                 Constraint::Min(10),

@@ -6,9 +6,10 @@ Goal: a single Rust binary that matches or beats [torlink](https://github.com/ba
 in functionality, installs in one command on Windows, and stays small enough to read in an
 afternoon.
 
-Status: phases 0 to 7 are done. `baka` with no arguments is the whole product: search,
+Status: phases 0 to 8 are done. `baka` with no arguments is the whole product: search,
 downloads, seeding and settings in one terminal interface, across every source torlink
-has, and the same binary runs headless on a box with no terminal at all. `baka attach`
+has plus books and audiobooks, and the same binary runs headless on a box with no
+terminal at all. `baka attach`
 opens that interface on a session already running somewhere else. Pushing a `v` tag
 builds it for both Windows architectures and for Linux, and publishes it to crates.io,
 Scoop, the AUR and the container registry. Everything on the parity checklist is done.
@@ -374,6 +375,34 @@ Five things found while building:
 - A key is kept from an unreadable settings file only if the settings still parse with
   it, so what salvage returns always loads. That is one rule rather than a list of
   renames to maintain, and it covers a file edited by hand as well as an older one.
+
+## Phase 8: books and audiobooks (done)
+
+Target was two more shelves without a new source file. What shipped:
+
+- `Category` gained `Books` and `Audiobooks`. Everything downstream of it, the browse
+  round robin, `--category`, the per source filter and the Search tab, followed from
+  the enum, because none of them names a category.
+- The Pirate Bay serves both: 601 and 602 for what is written, 102 for what is read
+  aloud, and a top 100 per shelf to browse.
+- 1337x serves both: `other/E-Books` and `other/Comics` for one, `other/Audiobook` for
+  the other.
+- Nyaa serves Books, from its Literature heading.
+- No new file in `search/`. The public book swarms worth having are on sites already in
+  the list, and a source that only ships bulk collections is not a search result.
+
+Three things found while building:
+
+- Nyaa was labelling every result Anime because it only ever asked for anime. A source
+  that serves two shelves has to read the shelf out of the answer, which the feed has
+  been carrying as `nyaa:categoryId` all along. The saved feed proves it: its first item
+  is `1_3`, and it was being filed as `1_2`.
+- 1337x files everything written under one section, so `/sub/movies/HD/1/` needed one
+  name to place a row and `/sub/other/E-Books/1/` needs two. Reading the first name
+  alone put comics and audiobooks on the same shelf.
+- The site's own E-Books listing answers with an empty table, so a browse asks for the
+  section above it and drops the rows no shelf claims. That is one request rather than a
+  listing that looks broken.
 
 ## Non-goals
 

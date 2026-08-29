@@ -138,12 +138,12 @@ async fn search(settings: &Settings, query: &str, category: Option<Category>) ->
     }
 
     println!(
-        "{:<12} {:<6} {:>6}  {:>9}  TITLE",
+        "{:<12} {:<10} {:>6}  {:>9}  TITLE",
         "SOURCE", "SHELF", "SEED", "SIZE"
     );
     for torrent in &outcome.torrents {
         println!(
-            "{:<12} {:<6} {:>6}  {:>9}  {}",
+            "{:<12} {:<10} {:>6}  {:>9}  {}",
             torrent.source,
             torrent.category.to_string(),
             torrent.seeders,

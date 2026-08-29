@@ -1119,6 +1119,16 @@ mod tests {
     }
 
     #[test]
+    fn the_longest_shelf_name_is_drawn_whole() {
+        let mut app = App::new(Settings::default(), None);
+        let mut spoken = found("Dune Audiobook Collection");
+        spoken.category = Category::Audiobooks;
+        app.results = vec![spoken];
+        app.typing = false;
+        assert!(screen(&mut app).contains("audiobooks"));
+    }
+
+    #[test]
     fn a_game_result_is_flagged_as_something_that_can_run_code() {
         let mut app = App::new(Settings::default(), None);
         let mut game = found("Some Game");

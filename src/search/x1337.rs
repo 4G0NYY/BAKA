@@ -19,7 +19,12 @@ impl Indexer for X1337 {
     }
 
     fn categories(&self) -> &'static [Category] {
-        &[Category::Movies, Category::Tv]
+        &[
+            Category::Movies,
+            Category::Tv,
+            Category::Books,
+            Category::Audiobooks,
+        ]
     }
 
     fn urls(&self, ask: &Ask) -> Vec<String> {
@@ -27,6 +32,11 @@ impl Indexer for X1337 {
             // The site writes spaces in a search path as plus signs.
             Ask::Words(query) => format!("/search/{}/1/", encode(query).replace("%20", "+")),
             Ask::Browse(Category::Tv) => "/popular-tv".to_string(),
+            // The site keeps no popular page for what it files under Other, and its
+            // own E-Books listing comes back empty, so the shelf below it is the one
+            // that answers. Rows from the rest of Other are dropped by `shelf`.
+            Ask::Browse(Category::Books) => "/cat/Other/1/".to_string(),
+            Ask::Browse(Category::Audiobooks) => "/sub/other/Audiobook/1/".to_string(),
             Ask::Browse(_) => "/popular-movies".to_string(),
         };
         HOSTS.iter().map(|host| format!("{host}{path}")).collect()
@@ -50,7 +60,7 @@ impl Indexer for X1337 {
 
 /// A row carries everything but the magnet link, which lives on the result's own page.
 fn torrent(row: &str, ask: &Ask) -> Option<Found> {
-    let category = shelf(field(row, "href=\"/sub/", "/")?)?;
+    let category = shelf(field(row, "href=\"/sub/", "\"")?)?;
     let (page, title) = field(row, "href=\"/torrent/", "</a>")?.split_once("\">")?;
     let title = unescape(title.trim());
 
@@ -78,10 +88,16 @@ fn torrent(row: &str, ask: &Ask) -> Option<Found> {
     })
 }
 
-fn shelf(section: &str) -> Option<Category> {
-    match section {
-        "movies" => Some(Category::Movies),
-        "tv" => Some(Category::Tv),
+/// The icon link reads `/sub/<section>/<shelf>/<page>/`, and everything written is
+/// filed under one section, so books are told apart by the second name rather than
+/// the first.
+fn shelf(link: &str) -> Option<Category> {
+    let mut names = link.split('/');
+    match (names.next()?, names.next()?) {
+        ("movies", _) => Some(Category::Movies),
+        ("tv", _) => Some(Category::Tv),
+        ("other", "E-Books" | "Comics") => Some(Category::Books),
+        ("other", "Audiobook") => Some(Category::Audiobooks),
         _ => None,
     }
 }
@@ -112,6 +128,7 @@ mod tests {
 
     const LISTING: &str = include_str!("fixtures/1337x.html");
     const PAGE: &str = include_str!("fixtures/1337x-detail.html");
+    const BOOKS: &str = include_str!("fixtures/1337x-books.html");
 
     fn pending(body: &str) -> Vec<(String, Torrent)> {
         X1337
@@ -141,6 +158,27 @@ mod tests {
         assert_eq!(torrent.size_bytes, 11_381_663_334);
         assert_eq!(torrent.category, Category::Movies);
         assert!(torrent.magnet.is_empty());
+    }
+
+    #[test]
+    fn written_and_spoken_are_told_apart_by_the_shelf_under_other() {
+        let found: Vec<Torrent> = X1337
+            .parse(BOOKS, &Ask::Words("audiobook".to_string()))
+            .unwrap()
+            .into_iter()
+            .filter_map(|item| match item {
+                Found::OnPage { torrent, .. } => Some(torrent),
+                Found::Ready(_) => None,
+            })
+            .collect();
+        assert_eq!(found.len(), 3);
+
+        assert_eq!(found[0].title, "Terry Pratchett Audiobook Collection");
+        assert_eq!(found[0].category, Category::Audiobooks);
+        assert_eq!(found[0].seeders, 196);
+        assert_eq!(found[0].size_bytes, 25_662_429_593);
+        assert_eq!(found[1].category, Category::Books);
+        assert_eq!(found[2].category, Category::Audiobooks);
     }
 
     #[test]
@@ -183,5 +221,9 @@ mod tests {
                 .ends_with("/search/dune+part+two/1/")
         );
         assert!(X1337.urls(&Ask::Browse(Category::Tv))[0].ends_with("/popular-tv"));
+        assert!(X1337.urls(&Ask::Browse(Category::Books))[0].ends_with("/cat/Other/1/"));
+        assert!(
+            X1337.urls(&Ask::Browse(Category::Audiobooks))[0].ends_with("/sub/other/Audiobook/1/")
+        );
     }
 }

@@ -1,0 +1,62 @@
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:nyaa="https://nyaa.si/xmlns/nyaa" version="2.0">
+	<channel>
+		<title>Nyaa - Home - Torrent File RSS</title>
+		<description>RSS Feed for Home</description>
+		<link>https://nyaa.si/</link>
+		<atom:link href="https://nyaa.si/?page=rss" rel="self" type="application/rss+xml" />
+				<item>
+			<title>A Good Day Starts with Cats and Books [Audiobook] [Seven Seas Siren] [Stick &amp; Oak]</title>
+				<link>https://nyaa.si/download/2153025.torrent</link>
+				<guid isPermaLink="true">https://nyaa.si/view/2153025</guid>
+				<pubDate>Sat, 29 Aug 2026 07:31:12 -0000</pubDate>
+
+				<nyaa:seeders>31</nyaa:seeders>
+				<nyaa:leechers>5</nyaa:leechers>
+				<nyaa:downloads>123</nyaa:downloads>
+				<nyaa:infoHash>57905a0032e75450e6813cbffa3294af7f70a0d4</nyaa:infoHash>
+			<nyaa:categoryId>3_1</nyaa:categoryId>
+			<nyaa:category>Literature - English-translated</nyaa:category>
+			<nyaa:size>340.5 MiB</nyaa:size>
+			<nyaa:comments>0</nyaa:comments>
+			<nyaa:trusted>No</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/2153025">#2153025 | A Good Day Starts with Cats and Books [Audiobook] [Seven Seas Siren] [Stick &amp; Oak]</a> | 340.5 MiB | Literature - English-translated | 57905A0032E75450E6813CBFFA3294AF7F70A0D4]]></description>
+		</item>
+		<item>
+			<title>Kiki&#39;s Delivery Service Series v01-02 [Audiobook] [Listening Library] [Stick &amp; Oak]</title>
+				<link>https://nyaa.si/download/2153013.torrent</link>
+				<guid isPermaLink="true">https://nyaa.si/view/2153013</guid>
+				<pubDate>Sat, 29 Aug 2026 06:50:34 -0000</pubDate>
+
+				<nyaa:seeders>37</nyaa:seeders>
+				<nyaa:leechers>7</nyaa:leechers>
+				<nyaa:downloads>132</nyaa:downloads>
+				<nyaa:infoHash>5742c8c4f7e8c49f6dd0bb13d4e0c2302935b4f7</nyaa:infoHash>
+			<nyaa:categoryId>3_1</nyaa:categoryId>
+			<nyaa:category>Literature - English-translated</nyaa:category>
+			<nyaa:size>639.1 MiB</nyaa:size>
+			<nyaa:comments>0</nyaa:comments>
+			<nyaa:trusted>No</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/2153013">#2153013 | Kiki&#39;s Delivery Service Series v01-02 [Audiobook] [Listening Library] [Stick &amp; Oak]</a> | 639.1 MiB | Literature - English-translated | 5742C8C4F7E8C49F6DD0BB13D4E0C2302935B4F7]]></description>
+		</item>
+		<item>
+			<title>A Tale of the Secret Saint v01-04 [Audiobook] [Seven Seas Siren] [Stick &amp; Oak]</title>
+				<link>https://nyaa.si/download/2153007.torrent</link>
+				<guid isPermaLink="true">https://nyaa.si/view/2153007</guid>
+				<pubDate>Sat, 29 Aug 2026 06:21:32 -0000</pubDate>
+
+				<nyaa:seeders>28</nyaa:seeders>
+				<nyaa:leechers>12</nyaa:leechers>
+				<nyaa:downloads>122</nyaa:downloads>
+				<nyaa:infoHash>c10db05d75b4180543b7977c05754b1698b868cb</nyaa:infoHash>
+			<nyaa:categoryId>3_1</nyaa:categoryId>
+			<nyaa:category>Literature - English-translated</nyaa:category>
+			<nyaa:size>1.4 GiB</nyaa:size>
+			<nyaa:comments>0</nyaa:comments>
+			<nyaa:trusted>No</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/2153007">#2153007 | A Tale of the Secret Saint v01-04 [Audiobook] [Seven Seas Siren] [Stick &amp; Oak]</a> | 1.4 GiB | Literature - English-translated | C10DB05D75B4180543B7977C05754B1698B868CB]]></description>
+		</item>
+	</channel>
+</rss>

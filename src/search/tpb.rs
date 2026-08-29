@@ -8,9 +8,11 @@ pub struct Tpb;
 // The site is a front end. apibay is the JSON behind it, and it needs no key.
 const API: &str = "https://apibay.org";
 
-/// apibay's numbering. 200 is video, and only these are films and shows.
+/// apibay's numbering. 100 is audio, 200 is video and 600 is everything written.
 const MOVIES: [u64; 4] = [201, 202, 207, 209];
 const SHOWS: [u64; 2] = [205, 208];
+const BOOKS: [u64; 2] = [601, 602];
+const AUDIOBOOKS: [u64; 1] = [102];
 
 /// A search with no hits comes back as one row with this hash rather than as nothing.
 const NOTHING: &str = "0000000000000000000000000000000000000000";
@@ -21,7 +23,12 @@ impl Indexer for Tpb {
     }
 
     fn categories(&self) -> &'static [Category] {
-        &[Category::Movies, Category::Tv]
+        &[
+            Category::Movies,
+            Category::Tv,
+            Category::Books,
+            Category::Audiobooks,
+        ]
     }
 
     fn urls(&self, ask: &Ask) -> Vec<String> {
@@ -29,6 +36,10 @@ impl Indexer for Tpb {
             Ask::Words(query) => format!("{API}/q.php?q={}", encode(query)),
             // The site keeps a top 100 per category, which is its own curated shelf.
             Ask::Browse(Category::Tv) => format!("{API}/precompiled/data_top100_208.json"),
+            Ask::Browse(Category::Books) => format!("{API}/precompiled/data_top100_601.json"),
+            Ask::Browse(Category::Audiobooks) => {
+                format!("{API}/precompiled/data_top100_102.json")
+            }
             Ask::Browse(_) => format!("{API}/precompiled/data_top100_207.json"),
         };
         vec![url]
@@ -69,6 +80,12 @@ fn shelf(category: u64) -> Option<Category> {
     }
     if SHOWS.contains(&category) {
         return Some(Category::Tv);
+    }
+    if BOOKS.contains(&category) {
+        return Some(Category::Books);
+    }
+    if AUDIOBOOKS.contains(&category) {
+        return Some(Category::Audiobooks);
     }
     None
 }
@@ -129,11 +146,30 @@ mod tests {
     }
 
     #[test]
-    fn categories_that_are_neither_films_nor_shows_are_left_alone() {
-        // The fixture carries a row from 601, which is comics.
-        assert!(SEARCH.contains("\"601\""));
-        assert!(parse(SEARCH).iter().all(|t| t.source == "tpb"));
-        assert_eq!(parse(SEARCH).len(), 3);
+    fn written_and_spoken_land_on_their_own_shelves() {
+        let found = parse(SEARCH);
+        let book = found
+            .iter()
+            .find(|t| t.category == Category::Books)
+            .unwrap();
+        assert_eq!(book.title, "All Dune books + short stories + extras ePUB");
+
+        let spoken = found
+            .iter()
+            .find(|t| t.category == Category::Audiobooks)
+            .unwrap();
+        assert_eq!(spoken.title, "Dune - Audiobook Collection 2015");
+    }
+
+    #[test]
+    fn a_category_no_shelf_claims_is_left_alone() {
+        let music = format!(
+            r#"[{{"id":"1","name":"Some Album","info_hash":"{}","leechers":"0",
+                 "seeders":"1","size":"1","category":"101"}}]"#,
+            "a".repeat(40)
+        );
+        assert!(parse(&music).is_empty());
+        assert_eq!(parse(SEARCH).len(), 5);
     }
 
     #[test]
@@ -165,5 +201,7 @@ mod tests {
     fn each_shelf_browses_its_own_top_hundred() {
         assert!(Tpb.urls(&Ask::Browse(Category::Tv))[0].contains("208"));
         assert!(Tpb.urls(&Ask::Browse(Category::Movies))[0].contains("207"));
+        assert!(Tpb.urls(&Ask::Browse(Category::Books))[0].contains("601"));
+        assert!(Tpb.urls(&Ask::Browse(Category::Audiobooks))[0].contains("102"));
     }
 }

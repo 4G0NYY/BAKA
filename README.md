@@ -250,17 +250,21 @@ A short, hand-picked list. No indexer proxy to configure.
 | TV | EZTV, The Pirate Bay, 1337x, BitTorrented |
 | Anime | Nyaa, SubsPlease |
 | Games | FitGirl |
+| Books | The Pirate Bay, 1337x, Nyaa |
+| Audiobooks | The Pirate Bay, 1337x |
 
 Game results are executables and can run code on your machine. BAKA marks them clearly.
 Video and subtitle results cannot.
 
-Two of them work differently to the rest, and the Search tab says which source each
+Some of them work differently to the rest, and the Search tab says which source each
 result came from so you can tell:
 
 - EZTV publishes new releases rather than a search, so a query keeps whatever in the
   current feed matches it. Browsing is where it shows its whole hand.
 - 1337x is blocked or challenged on some networks. BAKA tries its mirrors in turn and
   moves on quietly if none of them answer.
+- Nyaa files manga, light novels and the audiobooks read from them all under one
+  heading, so they arrive on the Books shelf rather than split between the two.
 
 ## How it works
 

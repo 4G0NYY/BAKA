@@ -47,10 +47,19 @@ pub enum Category {
     Tv,
     Anime,
     Games,
+    Books,
+    Audiobooks,
 }
 
 impl Category {
-    pub const ALL: [Self; 4] = [Self::Movies, Self::Tv, Self::Anime, Self::Games];
+    pub const ALL: [Self; 6] = [
+        Self::Movies,
+        Self::Tv,
+        Self::Anime,
+        Self::Games,
+        Self::Books,
+        Self::Audiobooks,
+    ];
 
     fn shelf(self) -> usize {
         Self::ALL.iter().position(|cat| *cat == self).unwrap_or(0)
@@ -64,6 +73,8 @@ impl fmt::Display for Category {
             Self::Tv => "tv",
             Self::Anime => "anime",
             Self::Games => "games",
+            Self::Books => "books",
+            Self::Audiobooks => "audiobooks",
         })
     }
 }
