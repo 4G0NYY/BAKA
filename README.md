@@ -11,7 +11,7 @@ BitTorrent Acquisition & Keyword Aggregator
 Search torrents and download them without leaving your terminal. One Rust binary, no
 runtime, no setup.
 
-> **Status: pre-alpha.** Everything below works: the interface, the downloads, the
+> **Status: Version 2.0 ** Everything below works: the interface, the downloads, the
 > settings page, every source, the headless modes and attaching to one of them. Pushing
 > a tag builds and publishes a release, and the install commands below work from the
 > first tagged release onwards. The plan, and what each phase actually shipped, is in
