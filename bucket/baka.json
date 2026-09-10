@@ -1,16 +1,16 @@
 {
-    "version": "0.1.2",
+    "version": "0.1.3",
     "description": "BitTorrent Acquisition & Keyword Aggregator, a terminal torrent search and download tool",
     "homepage": "https://gitlab.ramon.moe/4G0NYY/BAKA",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v0.1.2/downloads/baka-0.1.2-x86_64-pc-windows-msvc.zip",
-            "hash": "c1ba8540e90fc133735fadbf8cb8b25d27e4e5b6bc4a97b08b1467d61a5e9525"
+            "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v0.1.3/downloads/baka-0.1.3-x86_64-pc-windows-msvc.zip",
+            "hash": "07f411fa833e33f576465db53bc33c3c4e02712761b8b74d4d57ded45b512e81"
         },
         "arm64": {
-            "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v0.1.2/downloads/baka-0.1.2-aarch64-pc-windows-msvc.zip",
-            "hash": "38c6e259372fbf9ea2bc63ed6b7fcd9620e3145db7354e44bf3198c1d22c034a"
+            "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v0.1.3/downloads/baka-0.1.3-aarch64-pc-windows-msvc.zip",
+            "hash": "b45c30f48a6c75b3dea6de9e66e3e9dde429a4794aded70fe1ce6c2a2763f908"
         }
     },
     "bin": "baka.exe",
