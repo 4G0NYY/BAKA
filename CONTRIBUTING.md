@@ -19,9 +19,8 @@ and one line in the registry, and nothing else.
 
 ## Releasing
 
-A release is a tag. Everything else happens in
-[`.gitlab-ci.yml`](.gitlab-ci.yml). The workflows in `.github/` do the same job minus
-the container image and the AUR package, for anyone building this on GitHub.
+A release is a tag. Everything except winget happens in
+[`.gitlab-ci.yml`](.gitlab-ci.yml).
 
 1. `main` is green.
 2. Bump `version` in `Cargo.toml` and run `cargo build` so `Cargo.lock` follows. Commit both.
@@ -48,6 +47,13 @@ Each release asset is attached with a `filepath`, which is what makes
 `Cargo.toml` are both written against that permalink, so dropping the `filepath` breaks
 both installs while leaving the release looking correct.
 
+winget only accepts pull requests from a GitHub account, so it is the one job on GitHub.
+[`.github/workflows/winget.yml`](.github/workflows/winget.yml) runs when the mirror
+brings the tag over. It waits for the GitLab release, checks the archives against its
+`SHA256SUMS.txt`, copies them to a GitHub release (the winget manifest points there),
+and has `wingetcreate` open the pull request against `microsoft/winget-pkgs`. It builds
+nothing.
+
 The manifests are templates. `scripts/manifests.sh` fills in the version and the
 checksums and refuses to write a file with a placeholder left in it, and CI renders them
 on every merge request so a broken template is caught before a release needs them.
@@ -61,6 +67,12 @@ on every merge request so a broken template is caught before a release needs the
 | `AUR_SSH_KEY` | `aur` | The AUR package is not updated. It needs a private key whose public half is on an AUR account that maintains `b-baka`, added as a **File** variable: GitLab cannot mask a multi line value, so a key in an ordinary variable is a key waiting to be printed |
 
 `container` needs no secret: `CI_JOB_TOKEN` is what it logs in to the registry with.
+
+One secret lives on GitHub instead, under the repository's Actions secrets:
+
+| Secret | Used by | Missing means |
+| --- | --- | --- |
+| `WINGET_TOKEN` | `winget.yml` | The GitHub release is still created, but no winget pull request is opened. It needs a classic personal access token with `public_repo` from the account that owns the `winget-pkgs` fork |
 
 ### Runners
 

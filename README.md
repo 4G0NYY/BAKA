@@ -28,7 +28,13 @@ environment variables to discover, no flags to memorise.
 
 ## Install
 
-Windows, x64 and arm64:
+Windows, x64 and arm64, with winget:
+
+```powershell
+winget install 4G0NYY.BAKA
+```
+
+Or with Scoop:
 
 ```powershell
 scoop bucket add baka https://gitlab.ramon.moe/4G0NYY/BAKA

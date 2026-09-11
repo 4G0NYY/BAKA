@@ -1,0 +1,83 @@
+# winget takes a submission as a pull request against microsoft/winget-pkgs, which only a
+# GitHub account can open, so this is the one part of a release that runs on GitHub. The
+# archives are built by .gitlab-ci.yml and copied here, because the winget manifest points
+# at this repository's releases. The tag arrives through the mirror, often before GitLab
+# has finished building, hence the wait.
+name: Winget
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  winget:
+    runs-on: windows-latest
+    steps:
+      - name: Wait for the GitLab release
+        shell: bash
+        run: |
+          set -eu
+          number=${GITHUB_REF_NAME#v}
+          base="https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/$GITHUB_REF_NAME/downloads"
+          files=(
+            "baka-$number-x86_64-pc-windows-msvc.zip"
+            "baka-$number-aarch64-pc-windows-msvc.zip"
+            "baka-$number-x86_64-unknown-linux-gnu.tar.gz"
+            SHA256SUMS.txt
+          )
+          fetch() {
+            for f in "${files[@]}"; do
+              curl --fail --silent --location --output "$f" "$base/$f" || return 1
+            done
+          }
+          mkdir archives
+          cd archives
+          for attempt in $(seq 60); do
+            if fetch; then break; fi
+            if [ "$attempt" = 60 ]; then
+              echo "The GitLab release for $GITHUB_REF_NAME never appeared" >&2
+              exit 1
+            fi
+            sleep 60
+          done
+          grep ' baka-' SHA256SUMS.txt | sha256sum --check
+
+      - name: Copy it to a GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$GITHUB_REF_NAME already has a GitHub release, leaving it alone."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" archives/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
+
+      # wingetcreate downloads both installers and hashes them itself, so no checksum is
+      # carried over by hand. The architecture is spelled out rather than left for it to
+      # guess from the file name.
+      - name: Open the pull request against microsoft/winget-pkgs
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if (-not $env:WINGET_CREATE_GITHUB_TOKEN) {
+            "WINGET_TOKEN is not set, skipping the winget submission."
+            exit 0
+          }
+          $number = $env:GITHUB_REF_NAME.TrimStart('v')
+          $base = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME"
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          ./wingetcreate.exe update 4G0NYY.BAKA `
+            --version $number `
+            --urls "$base/baka-$number-x86_64-pc-windows-msvc.zip|x64" `
+                   "$base/baka-$number-aarch64-pc-windows-msvc.zip|arm64" `
+            --submit

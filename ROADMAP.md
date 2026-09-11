@@ -22,7 +22,7 @@ Scoop, the AUR and the container registry. Everything on the parity checklist is
 | Interface | TUI first, CLI subcommands alongside | Matches torlink's shape and keeps headless and scripted use possible. |
 | Settings | One Settings page, one TOML file, no environment variables | Every knob is in one place you can find without reading docs. |
 | Sources | Same curated list as torlink | Parity out of the box, no setup for the user. |
-| Platforms for 1.0 | Windows via Scoop, Arch via the AUR, a container image for the headless modes, plus `cargo install` and `cargo binstall` everywhere | Windows is the primary target. `cargo install` covers Linux and macOS for free, and `cargo binstall` makes that instant where a release archive exists. |
+| Platforms for 1.0 | Windows via winget and Scoop, Arch via the AUR, a container image for the headless modes, plus `cargo install` and `cargo binstall` everywhere | Windows is the primary target. `cargo install` covers Linux and macOS for free, and `cargo binstall` makes that instant where a release archive exists. |
 | Layout | One crate, several modules | Five crates for a tool this size is overhead, not structure. Split only when compile times justify it. |
 
 ## Settings model
@@ -278,8 +278,10 @@ Target was installing in one command. What shipped:
 - `.gitlab-ci.yml` on a `v*` tag. It builds `x86_64-pc-windows-msvc` and
   `aarch64-pc-windows-msvc` on a Windows runner and `x86_64-unknown-linux-gnu` in a
   container, packs each with the README and the licence, and attaches all three plus
-  `SHA256SUMS.txt` to a GitLab release. `.github/workflows/release.yml` still does the
-  Windows half of that for anyone building this on GitHub.
+  `SHA256SUMS.txt` to a GitLab release.
+- `.github/workflows/winget.yml` on the mirrored tag, the one release job on GitHub,
+  because winget only takes pull requests from a GitHub account. It copies the GitLab
+  archives to a GitHub release and has `wingetcreate` submit them as `4G0NYY.BAKA`.
 - The tag is compared against the version in `Cargo.toml` before anything is built. A
   mismatch is the one release mistake that cannot be taken back, because crates.io does
   not let a version be republished.
@@ -332,10 +334,8 @@ Six things found while building:
   rustup nor the MSVC toolchain, and installing them per job costs more than the build,
   so the Windows jobs run on a shell runner with the toolchain on the machine.
 
-Left open: winget, which submits by opening a pull request against a GitHub repository
-and therefore left with GitHub, and Chocolatey, which was waiting on winget and now has
-nothing to wait for. Its manifests were removed rather than kept as a template nothing
-renders.
+Left open: Chocolatey. It was waiting on winget, which is now done, and its manifests
+were removed rather than kept as a template nothing renders.
 
 ## Phase 7: 1.0 (done)
 

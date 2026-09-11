@@ -1,7 +1,6 @@
-# GitLab CI/CD. This is where releases come from. The workflows in .github/ are kept for
-# anyone building the project on GitHub, but nothing here depends on them and the winget
-# job that used to live there is gone: it opened a pull request against a GitHub
-# repository, which this project no longer has.
+# GitLab CI/CD. This is where releases come from. The one exception is winget, which
+# only takes pull requests from a GitHub account: .github/workflows/winget.yml runs on
+# the mirrored tag and submits the archives this pipeline built.
 
 stages:
   - check
