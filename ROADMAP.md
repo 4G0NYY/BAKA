@@ -303,6 +303,10 @@ Target was installing in one command. What shipped:
 - Every route installs the executable and nothing else. Unpacking a built archive and
   asking the binary where its settings are answers `%APPDATA%\baka\config.toml`, which
   is not a path any of the uninstalls can reach.
+- `.cargo/config.toml` links the C runtime statically on Windows. The default build
+  imports `VCRUNTIME140.dll`, which Windows does not ship, so the archive only ran where
+  the Visual C++ Redistributable happened to be installed, and winget asked for it to be
+  declared as a dependency.
 - `CONTRIBUTING.md` has the checks to run, the three steps before a tag, what each job in
   the release does, and which secret each one needs.
 

@@ -1,0 +1,6 @@
+# Windows ships the UCRT but not VCRUNTIME140.dll, so a dynamically linked build does
+# not start on a machine without the Visual C++ Redistributable. Static linking keeps
+# the zip a single file that runs anywhere and keeps winget and Scoop free of a
+# dependency on Microsoft.VCRedist.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

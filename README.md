@@ -82,9 +82,10 @@ them, if you would rather unpack the binary and put it somewhere yourself:
 (Get-FileHash baka-0.1.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash
 ```
 
-Every route installs a portable executable and nothing else. Uninstalling removes the
-binary and leaves `config.toml` and your downloads alone, so reinstalling finds the
-settings you already had.
+Every route installs a portable executable and nothing else. The Windows build carries
+its own C runtime, so it does not need the Visual C++ Redistributable. Uninstalling
+removes the binary and leaves `config.toml` and your downloads alone, so reinstalling
+finds the settings you already had.
 
 ## Use
 
