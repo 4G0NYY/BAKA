@@ -170,7 +170,9 @@ release:
       apk add --no-cache curl
       mkdir -p archives && mv baka-*.zip baka-*.tar.gz archives/
       cd archives
-      sha256sum * | tee SHA256SUMS.txt
+      # Not `*`: tee creates SHA256SUMS.txt while the glob may still be expanding, and
+      # the file then lists its own empty hash, so `sha256sum -c` always fails once.
+      sha256sum baka-* | tee SHA256SUMS.txt
       # Matched on the full target triple: plain x86_64 now also matches the Linux
       # tarball, and Scoop would be handed the wrong checksum.
       echo "X64=$(awk '/x86_64-pc-windows-msvc/ { print $1 }' SHA256SUMS.txt)"    >> ../sums.env
