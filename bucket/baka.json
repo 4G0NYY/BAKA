@@ -6,7 +6,7 @@
     "architecture": {
         "64bit": {
             "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v0.2.1/downloads/baka-0.2.1-x86_64-pc-windows-msvc.zip",
-            "hash": "a9d4e21f96f9710ca5bcf961d30be981b0547757d5953ca9a1fe533462041334"
+            "hash": "a9d4e21f96f9710ca5bcf961d30be981b0547757d5953ce9a1fe533462041334"
         },
         "arm64": {
             "url": "https://gitlab.ramon.moe/4G0NYY/BAKA/-/releases/v0.2.1/downloads/baka-0.2.1-aarch64-pc-windows-msvc.zip",
